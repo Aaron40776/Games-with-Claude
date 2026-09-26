@@ -562,7 +562,10 @@ export class Combat {
     this.turnInfo = freshTurnInfo();
     for (const u of [this.player, ...this.enemies]) u.vars.roundLoss = 0;
     const p = this.player;
-    if (!this.status(p, 'bulwark')) p.shield = 0;
+    if (!this.status(p, 'bulwark') && p.shield) {
+      p.shield = 0;
+      this.events.push({ t: 'shieldReset', tgt: 'P' });
+    }
     const carry = this.hasRelic('void_battery') ? this.energy : 0;
     this.energy = this.maxEnergy() + carry;
     this.events.push({ t: 'turn', turn: this.turn });
@@ -614,7 +617,11 @@ export class Combat {
   }
 
   enemyTurn(e) {
-    if (!this.status(e, 'bulwark')) e.shield = 0;
+    if (!this.status(e, 'bulwark') && e.shield) {
+      e.shield = 0;
+      this.events.push({ t: 'shieldReset', tgt: e.ref });
+    }
+    this.events.push({ t: 'enemyTurn', src: e.ref });
     this.tickTurnStart(e);
     if (!e.alive || this.outcome) return;
     const move = e.def.moves[e.move];
