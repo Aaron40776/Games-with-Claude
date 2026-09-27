@@ -1,5 +1,5 @@
-# Builds the games and publishes them on GitHub Pages.
-# Riftdeck: https://<user>.github.io/Games-with-Claude/riftdeck/
+# Tests, builds and publishes Riftdeck on GitHub Pages on every push to main.
+# Live at https://aaron40776.github.io/Riftdeck/
 name: Deploy to GitHub Pages
 
 on:
@@ -19,16 +19,12 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: riftdeck
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: riftdeck/package-lock.json
       - name: Install
         run: npm ci
         env:
@@ -39,10 +35,9 @@ jobs:
         run: npm run build
       - name: Assemble site
         run: |
-          mkdir -p ../site/riftdeck
-          cp dist/index.html ../site/riftdeck/index.html
-          cp ../pages/index.html ../site/index.html
-          touch ../site/.nojekyll
+          mkdir -p site
+          cp dist/index.html site/index.html
+          touch site/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

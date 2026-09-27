@@ -257,3 +257,68 @@ test('bot completes 40 full runs without errors', () => {
   }
   assert.equal(finished, 40);
 });
+
+// ------------------------------------------------------ checkup regressions
+
+test('Shield from combat start (Kinetic Plate) survives into turn 1', () => {
+  const g = setup(['leech'], { relics: ['kinetic_plate'] });
+  assert.equal(g.player.shield, 10);
+  g.endTurn();
+  while (g.phase === 'enemy') g.enemyStep();
+  assert.ok(g.player.shield === 0, 'but it expires at the start of turn 2');
+});
+
+test('Echo only doubles the first card of a turn, even when played mid-turn', () => {
+  const g = setup(['heart'], { hand: ['pulse_shot', 'echo_chamber', 'pulse_shot'] });
+  g.playCard(g.hand[0].uid, g.enemies[0].ref);
+  g.playCard(g.hand[0].uid);
+  g.drain();
+  g.playCard(g.hand[0].uid, g.enemies[0].ref);
+  const play = g.drain().find((e) => e.t === 'play');
+  assert.equal(play.times, 1);
+});
+
+test('opening cards are drawn on turn 1 even with Static shuffled in', () => {
+  for (let seed = 1; seed < 30; seed++) {
+    const run = { hp: 72, maxHp: 72, deck: [], relics: [{ id: 'static_heart' }], cells: [null, null, null] };
+    for (let i = 0; i < 5; i++) run.deck.push({ uid: `o${i}`, id: 'ghost_protocol', up: true });
+    for (let i = 0; i < 5; i++) run.deck.push({ uid: `p${i}`, id: 'pulse_shot', up: false });
+    const g = new Combat(run, ['leech'], { rng: new RNG(seed), aiRng: new RNG(2) }).start();
+    assert.equal(g.hand.filter((c) => c.id === 'ghost_protocol').length, 5, `seed ${seed}`);
+  }
+});
+
+test('events never soft-lock on deck choices with no valid card', () => {
+  const run = R.newRun('LOCK1');
+  for (const c of run.deck) c.up = true;
+  run.room = { type: 'event', eventId: 'overclock_station', stage: 'choose', options: null, result: null, queue: [] };
+  const calibrate = R.eventOptions(run).findIndex((o) => o.label === 'Calibrate');
+  assert.ok(R.eventOptions(run)[calibrate].disabled, 'Calibrate is disabled with a fully upgraded deck');
+  // Even when an upgrade effect fires anyway (e.g. from the opening gate), the room can be left.
+  run.room = { type: 'event', eventId: 'broken_terminal', stage: 'choose', options: null, result: null, queue: [] };
+  R.chooseEventOption(run, 0);
+  run.room.queue.push({ kind: 'deck', op: 'upgrade', n: 1, source: 'event' });
+  run.room.pendingChoice = run.room.queue.shift();
+  assert.ok(R.resolveDeckChoice(run, []), 'an empty choice resolves when nothing qualifies');
+  assert.ok(R.leaveRoom(run));
+});
+
+test('cell events require a free slot', () => {
+  const run = R.newRun('CELL1');
+  run.cells = ['blast_cell', 'blast_cell', 'blast_cell'];
+  run.shards = 200;
+  run.room = { type: 'event', eventId: 'drifting_courier', stage: 'choose', options: null, result: null, queue: [] };
+  const buy = R.eventOptions(run).find((o) => o.label === 'Buy');
+  assert.ok(buy.disabled);
+});
+
+test('buying Membership Chip discounts the rest of the shop', () => {
+  const run = R.newRun('SHOP1');
+  run.shards = 1000;
+  run.room = { type: 'shop', removed: false, stock: [
+    { kind: 'relic', id: 'membership_chip', price: 180 },
+    { kind: 'card', id: 'twin_burst', up: false, price: 50 },
+  ] };
+  assert.ok(R.buyItem(run, 0));
+  assert.equal(run.room.stock[1].price, 40);
+});
