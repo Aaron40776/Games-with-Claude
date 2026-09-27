@@ -404,8 +404,9 @@ export class CombatView {
         if (dist > (this.tapMode() ? 24 : 10)) this.beginDrag(p.uid);
       } else if (p.type === 'mouse') {
         if (dist > 7) this.beginDrag(p.uid);
-      } else if (dy < -12 && -dy > Math.abs(dx) * 0.7 && e.clientY < fanTop) {
-        // Touch on the fan: a clear upward swipe out of the fan picks the card up.
+      } else if (dy < -12 && (-dy > Math.abs(dx) * 1.2 || (-dy > Math.abs(dx) * 0.7 && e.clientY < fanTop))) {
+        // Touch on the fan: a steep upward swipe picks the card up at once, so it moves
+        // with the finger from the start. A diagonal one only once it has left the fan.
         this.beginDrag(p.uid);
       } else if (Math.abs(dx) > 10) {
         p.mode = 'scrub';
@@ -457,19 +458,18 @@ export class CombatView {
     const cw = this.cardWidth();
     const ch = cw * 1.4;
     const still = !!prefersReducedMotion();
+    // Where the card is shown right now, read before 'dragging' cancels a running hand
+    // transition. The first move turns it into the grip point (see grabAt).
+    const shown = new DOMMatrix(getComputedStyle(el).transform);
     this.drag = {
       cw, ch, playLine: this.playLine(), playable: this.g.canPlay(c),
-      x: 0, y: 0, scale: 1.08, scaleGoal: 1.08, tilt: 0, offX: 0, offY: 0, from: null,
-      lastX: null, lastT: 0, still,
+      x: 0, y: 0, gx: 0, gy: -0.68 * ch, scale: 1.08, scaleGoal: 1.08, tilt: 0, offX: 0, offY: 0,
+      shown, lastX: null, lastT: 0, still,
     };
     if (!still) {
-      // Start from where the card is shown right now (read before 'dragging' cancels a
-      // running hand transition), so picking it up glides instead of jumping.
-      const m = new DOMMatrix(getComputedStyle(el).transform);
-      const reach = -0.68 * ch; // bottom centre -> grip point, see heldTransform()
-      this.drag.from = { x: cw / 2 + m.e + m.c * reach, y: ch + m.f + m.d * reach };
-      this.drag.scale = Math.hypot(m.a, m.b) || 1.08;
-      this.drag.tilt = (Math.atan2(m.b, m.a) * 180) / Math.PI;
+      // Size and angle carry over from the hand and ease from there.
+      this.drag.scale = Math.hypot(shown.a, shown.b) || 1.08;
+      this.drag.tilt = (Math.atan2(shown.b, shown.a) * 180) / Math.PI;
     }
     this.selected = null;
     this.inspected = uid;
@@ -511,12 +511,7 @@ export class CombatView {
     }
     el.classList.toggle('will-play', armed);
     this.showPlayZone({ armed, label, line: d.playLine });
-    if (d.from) {
-      // First move: the gap between the card and the pointer closes in dragFrame().
-      d.offX = d.from.x - x;
-      d.offY = d.from.y - y;
-      d.from = null;
-    }
+    if (d.shown) this.grabAt(x, y);
     d.x = x;
     d.y = y;
     // The position follows the pointer 1:1; only the size change is eased (in dragFrame).
@@ -526,18 +521,40 @@ export class CombatView {
   }
 
   /**
+   * First move of a drag: the spot of the card under the pointer becomes the grip
+   * point, so the card moves with the finger from the start instead of sliding
+   * into place. If the finger already slid off the card, the grip is clamped to
+   * the card and the small remaining gap closes in dragFrame().
+   */
+  grabAt(x, y) {
+    const d = this.drag;
+    const m = d.shown;
+    d.shown = null;
+    // Pointer relative to the transform origin (bottom centre), back through scale and rotation.
+    const wx = x - d.cw / 2 - m.e;
+    const wy = y - d.ch - m.f;
+    const det = m.a * m.d - m.b * m.c || 1;
+    d.gx = clamp((m.d * wx - m.c * wy) / det, -0.42 * d.cw, 0.42 * d.cw);
+    d.gy = clamp((m.a * wy - m.b * wx) / det, -0.92 * d.ch, -0.1 * d.ch);
+    if (d.still) return;
+    d.offX = d.cw / 2 + m.e + m.a * d.gx + m.c * d.gy - x;
+    d.offY = d.ch + m.f + m.b * d.gx + m.d * d.gy - y;
+  }
+
+  /**
    * Transform for a card held at a point. Cards scale and rotate around their
    * bottom centre (the hand's transform-origin), so the translation is solved
-   * such that the grip point, a third of the way down the card, stays under
-   * the pointer for any scale and tilt. Keeping one origin avoids jumps when
-   * a card is picked up or put back.
+   * such that the grip point (gx, gy: offset from the bottom centre, unscaled)
+   * stays under the pointer for any scale and tilt. Keeping one origin avoids
+   * jumps when a card is picked up or put back.
    */
   heldTransform(x, y, scale, tiltDeg, dims = this.drag) {
-    const { cw, ch } = dims;
-    const reach = ch * scale * 0.68; // bottom centre -> grip point
+    const { cw, ch, gx = 0, gy = -0.68 * ch } = dims;
     const a = (tiltDeg * Math.PI) / 180;
-    const tx = x - cw / 2 - reach * Math.sin(a);
-    const ty = y - ch + reach * Math.cos(a);
+    const cos = Math.cos(a);
+    const sin = Math.sin(a);
+    const tx = x - cw / 2 - scale * (gx * cos - gy * sin);
+    const ty = y - ch - scale * (gx * sin + gy * cos);
     return `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) rotate(${tiltDeg.toFixed(2)}deg) scale(${scale.toFixed(3)})`;
   }
 
@@ -591,7 +608,7 @@ export class CombatView {
     this.highlightTarget(null);
     this.inspected = null;
     if (!c || cancelled) { this.refresh(); return; }
-    const drop = { x: d.x + d.offX, y: d.y + d.offY, cw: d.cw, ch: d.ch };
+    const drop = { x: d.x + d.offX, y: d.y + d.offY, cw: d.cw, ch: d.ch, gx: d.gx, gy: d.gy };
     if (this.g.needsTarget(c) && this.g.aliveEnemies().length > 0) {
       if (target) this.play(uid, target, { drop });
       else this.refresh();

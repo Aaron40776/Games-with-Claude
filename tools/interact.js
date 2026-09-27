@@ -190,6 +190,35 @@ async function swipe(page, cdp, from, to, steps = 8) {
     const s4 = await state(page);
     check(s4.energy === beforeShort.energy, 'phone: a short swipe below the play line is cancelled');
   }
+  // A steep upward swipe picks the card up right away, even when it is touched low in the
+  // fan, and the card keeps the touched spot under the finger instead of sliding into place.
+  {
+    const s0 = await state(page);
+    const i = s0.hand.findIndex((id) => id === 'deflect' || id === 'pulse_shot');
+    if (i >= 0) {
+      const b = await stableBox(page.locator('.card.in-hand').nth(i));
+      const x = b.x + b.width / 2;
+      const y0 = b.y + b.height * 0.75;
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: y0 }] });
+      for (let k = 1; k <= 4; k++) {
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y0 - 8 * k }] });
+        await page.waitForTimeout(16);
+      }
+      const held = await page.evaluate(() => {
+        const cv = window.__riftdeck.combat;
+        const d = cv.drag;
+        if (!d) return null;
+        const m = new DOMMatrix(cv.cardEls.get(cv.dragUid).style.transform);
+        return { x: d.cw / 2 + m.e + m.a * d.gx + m.c * d.gy, y: d.ch + m.f + m.b * d.gx + m.d * d.gy };
+      });
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await page.waitForTimeout(300);
+      check(!!held, 'phone: a short steep swipe up from low on a card picks it up at once');
+      check(!!held && Math.hypot(held.x - x, held.y - (y0 - 32)) < 2,
+        `phone: the picked-up card keeps the touched spot under the finger (${held && [Math.round(held.x), Math.round(held.y)]} vs ${Math.round(x)},${Math.round(y0 - 32)})`);
+      check((await state(page)).energy === s0.energy, 'phone: releasing it inside the hand does not play it');
+    }
+  }
   // Browsing the fan sideways with a finger that drifts upward stays in the hand and selects.
   {
     const s0 = await state(page);
