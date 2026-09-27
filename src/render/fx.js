@@ -175,3 +175,29 @@ export function makeBeam(a, b, color, width = 0.06) {
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
   return mesh;
 }
+
+let flashTex = null;
+/** Soft white dot, tinted per flash by the material color. Shared, never disposed. */
+function flashTexture() {
+  if (flashTex) return flashTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.2, 'rgba(255,255,255,0.75)');
+  gr.addColorStop(0.5, 'rgba(255,255,255,0.18)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 64, 64);
+  flashTex = new THREE.CanvasTexture(c);
+  return flashTex;
+}
+
+/** A bright camera-facing quad for impacts; the caller turns it to the camera each frame. */
+export function makeFlash(color) {
+  return new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({
+    map: flashTexture(), color: new THREE.Color(color).multiplyScalar(2.2), transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, toneMapped: false,
+  }));
+}

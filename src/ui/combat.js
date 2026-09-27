@@ -7,6 +7,7 @@ import { icon, STATUS_ICON, INTENT_COLOR, CELL_COLOR } from './icons.js';
 import { STATUSES } from '../data/statuses.js';
 import { CELLS } from '../data/cells.js';
 import { RELICS } from '../data/relics.js';
+import { bump, burst } from './juice.js';
 
 const BEAM_CARDS = new Set(['rail_spike', 'pierce_veil', 'rift_tear', 'fusion_beam', 'singularity', 'discharge']);
 const QUIET_STATUSES = new Set(['charge', 'surge', 'minion', 'countdown']);
@@ -38,6 +39,7 @@ export class CombatView {
     this.root = root;
     this.unitsLayer = h('div.units');
     this.popLayer = h('div.pops');
+    this.fxLayer = h('div.fx-layer');
     this.banner = h('div.banner', { hidden: true });
     this.hint = h('div.hint', { hidden: true });
     this.handEl = h('div.hand');
@@ -51,7 +53,7 @@ export class CombatView {
     const left = h('div.bar-left', this.energyEl, this.drawBtn);
     const right = h('div.bar-right', this.fadedBtn, this.discardBtn, this.endBtn);
 
-    root.append(this.unitsLayer, this.popLayer, this.playZone, this.handEl, left, right, this.hint, this.banner);
+    root.append(this.unitsLayer, this.popLayer, this.playZone, this.fxLayer, this.handEl, left, right, this.hint, this.banner);
     this.app.stage.appendChild(root);
 
     this.handEl.addEventListener('pointerdown', (e) => this.onPointerDown(e));
@@ -120,9 +122,11 @@ export class CombatView {
     const intent = h('div.intent');
     const name = h('div.u-name', u.isPlayer ? '' : u.name);
     const hpFill = h('div.hp-fill');
+    // Trails behind the fill after a hit, so the lost chunk stays visible for a moment.
+    const hpLag = h('div.hp-lag');
     const hpText = h('span.hp-text');
     const shield = h('span.u-shield');
-    const hp = h('div.hp', hpFill, hpText, shield);
+    const hp = h('div.hp', hpLag, hpFill, hpText, shield);
     const statuses = h('div.statuses');
     const hit = h('div.hitbox');
     el.append(hit, intent, h('div.u-plate', name, hp, statuses));
@@ -131,7 +135,7 @@ export class CombatView {
       intent._tip = () => this.intentTip(u.ref);
     }
     this.unitsLayer.appendChild(el);
-    this.unitEls.set(u.ref, { el, intent, hpFill, hpText, shield, statuses, hit });
+    this.unitEls.set(u.ref, { el, intent, hpFill, hpLag, hpText, shield, statuses, hit, plate: el.lastChild, shown: null });
     this.renderUnit(u.ref);
   }
 
@@ -143,7 +147,11 @@ export class CombatView {
     const d = this.display.get(ref) || { hp: u.hp, shield: u.shield };
     const pct = clamp(d.hp / u.maxHp, 0, 1);
     parts.hpFill.style.width = `${pct * 100}%`;
+    parts.hpLag.style.width = `${pct * 100}%`;
     parts.hpText.textContent = `${Math.max(0, d.hp)}/${u.maxHp}`;
+    // Changes since the last render get a short bump, so the eye finds them.
+    const prev = parts.shown;
+    if (prev && d.shield > prev.shield) bump(parts.shield);
     parts.shield.innerHTML = d.shield > 0 ? `${icon('defend')}<b>${d.shield}</b>` : '';
     parts.el.classList.toggle('has-shield', d.shield > 0);
     // statuses
@@ -154,9 +162,12 @@ export class CombatView {
       const [ico, color] = STATUS_ICON[id] || ['unknown', '#fff'];
       const s = h('span.st', { style: { color }, html: `${icon(ico)}<b>${id === 'minion' ? '' : n}</b>` });
       s.classList.add(def.kind === 'debuff' ? 'debuff' : 'buff');
+      if (prev && prev.statuses[id] === undefined) s.classList.add('st-new');
+      else if (prev && prev.statuses[id] !== n) s.classList.add('st-bump');
       s._tip = () => `<b>${def.name}</b><p>${esc(def.desc(u.statuses[id] ?? n))}</p>`;
       parts.statuses.appendChild(s);
     }
+    parts.shown = { shield: d.shield, statuses: { ...u.statuses } };
     // intent
     if (!u.isPlayer) this.renderIntent(u, parts.intent);
     this.scene.setState(ref, {
@@ -167,20 +178,24 @@ export class CombatView {
   }
 
   renderIntent(e, el) {
-    if (!e.alive || this.g.phase === 'over') { el.innerHTML = ''; return; }
+    if (!e.alive || this.g.phase === 'over') { el.innerHTML = ''; el._html = ''; return; }
     if (this.hideIntents) {
       el.innerHTML = `<span class="it" style="color:${INTENT_COLOR.unknown}">${icon('unknown')}</span>`;
       return;
     }
     const it = this.g.intentOf(e);
-    if (!it) { el.innerHTML = ''; return; }
+    if (!it) { el.innerHTML = ''; el._html = ''; return; }
     const main = it.type;
     const color = INTENT_COLOR[main] || '#fff';
     let html = `<span class="it" style="color:${color}">${icon(main)}`;
     if (it.dmg !== null) html += `<b>${it.dmg}${it.hits > 1 ? `<small>×${it.hits}</small>` : ''}</b>`;
     html += '</span>';
     for (const t of it.types.slice(1)) html += `<span class="it sub" style="color:${INTENT_COLOR[t]}">${icon(t)}</span>`;
+    // Only a new intent is redrawn, and it pops in so the change is noticed.
+    if (el._html === html) return;
+    el._html = html;
     el.innerHTML = html;
+    bump(el, 'fresh');
   }
 
   intentTip(ref) {
@@ -237,6 +252,12 @@ export class CombatView {
     el.style.transition = 'none';
     el.style.transform = `translate(${origin.left}px, ${origin.top - 40}px) scale(.25) rotate(${from === 'draw' ? -20 : 20}deg)`;
     el.style.opacity = '0';
+    if (!prefersReducedMotion()) {
+      // Arrives face down and flips over on its way into the hand.
+      el.classList.add('drawn');
+      el.appendChild(h('div.c-back'));
+      setTimeout(() => { el.classList.remove('drawn'); el.querySelector('.c-back')?.remove(); }, 600);
+    }
     this.handEl.appendChild(el);
     this.cardEls.set(c.uid, el);
     void el.offsetWidth;
@@ -246,7 +267,8 @@ export class CombatView {
   }
 
   layoutHand() {
-    const hand = this.g.hand;
+    // A card held by the pointer leaves its slot, so the rest of the hand closes up.
+    const hand = this.g.hand.filter((c) => c.uid !== this.dragUid);
     const n = hand.length;
     const W = window.innerWidth;
     const H = window.innerHeight;
@@ -256,20 +278,27 @@ export class CombatView {
     const span = Math.min(W - 24 - cw, n * cw * 0.9);
     const step = n > 1 ? Math.min(cw * 0.92, span / (n - 1)) : 0;
     const x0 = W / 2 - (step * (n - 1)) / 2;
-    const baseY = H - sb - ch * 0.86 - 8;
+    // While the enemies act (as played back, not as the engine already is) the hand sinks a little.
+    const resting = this.enemyPhase && !prefersReducedMotion();
+    const baseY = H - sb - ch * 0.86 - 8 + (resting ? ch * 0.2 : 0);
     const coarse = matchMedia('(pointer: coarse)').matches;
+    const liftScale = coarse ? 1.55 : 1.3;
+    // With a mouse, the neighbours of an enlarged card slide aside so it can be read whole.
+    const liftIdx = coarse || this.dragUid ? -1 : hand.findIndex((c) => c.uid === this.inspected || c.uid === this.selected);
+    const push = liftIdx >= 0 ? Math.max(0, cw * (liftScale / 2 + 0.5) * 0.9 - step) : 0;
     hand.forEach((c, i) => {
       const el = this.cardEls.get(c.uid);
       if (!el || el.classList.contains('dragging') || el.classList.contains('leaving')) return;
       const off = i - (n - 1) / 2;
       let x = x0 + step * i - cw / 2;
+      if (push && i !== liftIdx) x += Math.sign(i - liftIdx) * push * (Math.abs(i - liftIdx) === 1 ? 1 : 0.85);
       let y = baseY + off * off * (coarse ? 2.2 : 3);
       let rot = clamp(off * (n > 6 ? 2.5 : 4), -14, 14);
       let scale = 1;
       let z = 10 + i;
       const lifted = this.inspected === c.uid || this.selected === c.uid;
       if (lifted) {
-        scale = coarse ? 1.55 : 1.3;
+        scale = liftScale;
         y = H - sb - ch - 12;
         x = clamp(x, (cw * (scale - 1)) / 2 + 8, W - cw - (cw * (scale - 1)) / 2 - 8);
         rot = 0;
@@ -277,7 +306,6 @@ export class CombatView {
       }
       el.style.zIndex = z;
       el.style.transform = `translate(${x}px, ${y}px) rotate(${rot}deg) scale(${scale})`;
-      el.dataset.cx = String(x0 + step * i);
       el.classList.toggle('lifted', lifted);
       el.classList.toggle('selected', this.selected === c.uid);
     });
@@ -298,13 +326,7 @@ export class CombatView {
       el.classList.toggle('unaffordable', g.costOf(c) !== null && g.costOf(c) !== 'X' && g.costOf(c) > g.energy);
     }
     this.layoutHand();
-    const max = g.maxEnergy();
-    this.energyEl.innerHTML = `${icon('energy')}<b>${g.energy}<small>/${max}</small></b>`;
-    this.energyEl.classList.toggle('empty', g.energy === 0);
-    this.drawBtn.innerHTML = `${icon('draw')}<b>${g.draw.length}</b>`;
-    this.discardBtn.innerHTML = `${icon('discard')}<b>${g.discard.length}</b>`;
-    this.fadedBtn.innerHTML = `${icon('faded')}<b>${g.faded.length}</b>`;
-    this.fadedBtn.hidden = g.faded.length === 0;
+    this.renderBar();
     const myTurn = g.phase === 'player' && !this.busy;
     this.endBtn.disabled = !myTurn || !!g.pending;
     this.endBtn.classList.toggle('glow', myTurn && !g.hand.some((c) => g.canPlay(c)));
@@ -801,10 +823,13 @@ export class CombatView {
     this.refresh();
     if (g.outcome === 'win') {
       await wait(this.d(500));
+      this.scene.victory?.();
       this.app.sfx.play('victory');
       await this.showBanner('Victory', 'win', 1100);
     } else {
       await wait(this.d(400));
+      // The world drains of colour; route() restores it on the next screen.
+      this.app.root.classList.add('defeat');
       this.app.sfx.play('defeat');
       await this.showBanner('Defeated', 'lose', 1500);
     }
@@ -860,11 +885,14 @@ export class CombatView {
         return;
       }
       case 'turn':
+        this.enemyPhase = false;
         sfx.play('turn');
         this.refresh();
         await this.showBanner(g.turn === 1 ? 'Combat start' : 'Your turn', 'player', 650);
         return;
       case 'enemyPhase':
+        this.enemyPhase = true;
+        this.layoutHand();
         sfx.play('enemyturn');
         await this.showBanner('Enemy turn', 'enemy', 550);
         return;
@@ -883,35 +911,14 @@ export class CombatView {
         const color = TYPE_COLOR[ev.type] || '#fff';
         this.scene.cast(color);
         sfx.play('card');
+        const drop = this.playDrop?.uid === ev.uid ? this.playDrop : null;
         if (el) {
-          el.classList.add('leaving');
-          el.style.zIndex = 200;
-          const drop = this.playDrop?.uid === ev.uid ? this.playDrop : null;
-          if (drop) {
-            // Dropped by hand: the card flares and dissolves right where it was released.
-            const still = prefersReducedMotion();
-            if (!still) el.classList.add('cast');
-            el.style.transform = this.heldTransform(drop.x, drop.y, 1, 0, drop);
-            setTimeout(() => {
-              el.style.transform = this.heldTransform(drop.x, drop.y - (still ? 0 : 30), still ? 1 : 0.55, 0, drop);
-              el.style.opacity = '0';
-              setTimeout(() => { el.remove(); }, 350);
-            }, this.d(still ? 0 : 140));
-          } else {
-            // Played by keyboard or tap: the card rises to the middle of the field first.
-            const cw = this.cardWidth();
-            el.style.transform = `translate(${window.innerWidth / 2 - cw / 2}px, ${window.innerHeight * 0.42 - cw * 0.7}px) scale(1.15)`;
-            el.style.opacity = '1';
-            setTimeout(() => {
-              el.style.transform += ' translateY(-40px) scale(.7)';
-              el.style.opacity = '0';
-              setTimeout(() => { el.remove(); }, 300);
-            }, this.d(260));
-          }
           this.cardEls.delete(ev.uid);
+          this.castCard(el, ev, color, drop);
         }
         this.layoutHand();
-        await wait(this.d(200));
+        // A tapped card is shown in the field before its effects start.
+        await wait(this.d(el && !drop ? 330 : 200));
         if (ev.times > 1) this.pop('P', 'Echo!', 'buff');
         return;
       }
@@ -953,6 +960,7 @@ export class CombatView {
           if (ev.cause === 'burn') this.scene.burnTick(ev.tgt);
           sfx.play(ev.tgt === 'P' ? 'hurt' : ev.cause === 'burn' ? 'burn' : 'hit', ev.n / 12);
           this.pop(ev.tgt, `${ev.n}`, ev.n >= 20 ? 'dmg big' : 'dmg');
+          bump(this.unitEls.get(ev.tgt)?.plate, 'hurt');
           if (ev.tgt === 'P') this.app.flashDamage(ev.n);
         }
         this.renderUnit(ev.tgt);
@@ -1046,6 +1054,10 @@ export class CombatView {
           setTimeout(() => el.remove(), 450);
           this.cardEls.delete(ev.uid);
           this.layoutHand();
+          this.refreshLight();
+          // Cards leave the hand one after another, not as one block.
+          await wait(this.d(55));
+          return;
         }
         this.refreshLight();
         return;
@@ -1074,9 +1086,6 @@ export class CombatView {
         return;
       case 'energy':
         sfx.play('energy');
-        this.energyEl.classList.remove('pulse');
-        void this.energyEl.offsetWidth;
-        this.energyEl.classList.add('pulse');
         this.refreshLight();
         return;
       case 'relic':
@@ -1104,15 +1113,87 @@ export class CombatView {
     }
   }
 
+  /**
+   * A played card is presented, flares up and collapses into light that drifts
+   * towards what it affects: its target, all enemies, or the runner.
+   * Dragged cards do this where they were dropped; tapped ones rise into the field first.
+   */
+  castCard(el, ev, color, drop) {
+    el.classList.add('leaving');
+    el.classList.remove('lifted', 'selected', 'will-play', 'playable');
+    el.style.zIndex = 200;
+    if (prefersReducedMotion()) {
+      el.style.opacity = '0';
+      setTimeout(() => el.remove(), 300);
+      return;
+    }
+    const cw = this.cardWidth();
+    const ch = cw * 1.4;
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    const from = getComputedStyle(el).transform;
+    const cur = new DOMMatrix(from === 'none' ? undefined : from);
+    const curScale = Math.hypot(cur.a, cur.b) || 1;
+    const stage = drop
+      ? this.heldTransform(drop.x, drop.y, Math.min(1.15, curScale * 1.12), 0, drop)
+      : `translate(${W / 2 - cw / 2}px, ${H * 0.44 - ch / 2}px) scale(1.15)`;
+    // Screen centre of the card once staged (it scales around its bottom centre).
+    const m = new DOMMatrix(stage);
+    const cx = m.e + cw / 2 - m.c * (ch / 2);
+    const cy = m.f + ch - m.d * (ch / 2);
+    const aim = this.castAim(ev) || { x: cx, y: cy - 80 };
+    const s = 0.14;
+    const tx = cx + (aim.x - cx) * 0.55;
+    const ty = cy + (aim.y - cy) * 0.55;
+    const end = `translate(${tx - cw / 2}px, ${ty - ch + (s * ch) / 2}px) scale(${s})`;
+    const dur = this.d(drop ? 460 : 720);
+    const hold = drop ? 0.22 : 0.5;
+    el.style.transition = 'none';
+    el.style.transform = end;
+    el.style.opacity = '0';
+    // Easing per segment: glide out to the stage, then accelerate into the collapse.
+    el.animate([
+      { transform: from, opacity: 1, filter: 'brightness(1)', offset: 0, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' },
+      { transform: stage, opacity: 1, filter: `brightness(1.9) drop-shadow(0 0 1.4em ${color})`, offset: hold, easing: 'cubic-bezier(0.55, 0, 0.8, 0.4)' },
+      { transform: end, opacity: 0, filter: 'brightness(3) blur(3px)', offset: 1 },
+    ], { duration: dur }).onfinish = () => el.remove();
+    setTimeout(() => burst(this.fxLayer, cx, cy, color, { size: cw * 1.5, sparks: 14 }), dur * hold);
+  }
+
+  /** Where a played card's light goes: the target, the enemies' middle, or the runner. */
+  castAim(ev) {
+    const centre = (ref) => {
+      const p = this.scene.project(ref);
+      return p && { x: p.x, y: (p.headY + p.footY) / 2 };
+    };
+    if (ev.target) return centre(ev.target);
+    if (ev.type === 'attack') {
+      const pts = this.g.aliveEnemies().map((e) => centre(e.ref)).filter(Boolean);
+      if (pts.length) return { x: pts.reduce((a, p) => a + p.x, 0) / pts.length, y: pts.reduce((a, p) => a + p.y, 0) / pts.length };
+    }
+    return centre('P');
+  }
+
   /** Cheap refresh during playback: piles, energy and hand layout. */
   refreshLight() {
-    const g = this.g;
-    this.drawBtn.innerHTML = `${icon('draw')}<b>${g.draw.length}</b>`;
-    this.discardBtn.innerHTML = `${icon('discard')}<b>${g.discard.length}</b>`;
-    this.fadedBtn.innerHTML = `${icon('faded')}<b>${g.faded.length}</b>`;
-    this.fadedBtn.hidden = g.faded.length === 0;
-    this.energyEl.innerHTML = `${icon('energy')}<b>${g.energy}<small>/${g.maxEnergy()}</small></b>`;
+    this.renderBar();
     this.layoutHand();
+  }
+
+  /** Energy and pile counters. A counter that changed bumps; spent Energy dips. */
+  renderBar() {
+    const g = this.g;
+    const now = { energy: g.energy, draw: g.draw.length, discard: g.discard.length, faded: g.faded.length };
+    const was = this.barShown || now;
+    this.barShown = now;
+    if (now.energy !== was.energy) bump(this.energyEl, now.energy < was.energy ? 'spend' : 'pulse');
+    for (const k of ['draw', 'discard', 'faded']) if (now[k] > was[k]) bump(this[`${k}Btn`]);
+    this.energyEl.innerHTML = `${icon('energy')}<b>${g.energy}<small>/${g.maxEnergy()}</small></b>`;
+    this.energyEl.classList.toggle('empty', g.energy === 0);
+    this.drawBtn.innerHTML = `${icon('draw')}<b>${now.draw}</b>`;
+    this.discardBtn.innerHTML = `${icon('discard')}<b>${now.discard}</b>`;
+    this.fadedBtn.innerHTML = `${icon('faded')}<b>${now.faded}</b>`;
+    this.fadedBtn.hidden = now.faded === 0;
   }
 
   flyGhost(id, pile) {
@@ -1134,6 +1215,8 @@ export class CombatView {
     const el = h(`div.pop.${cls.split(' ').join('.')}`, text);
     if (color) el.style.color = color;
     const y = p.headY + (p.footY - p.headY) * 0.35;
+    // Numbers drift away to one side, so quick multi-hits don't stack on each other.
+    el.style.setProperty('--dx', `${Math.round((Math.random() - 0.5) * 70)}px`);
     el.style.left = `${p.x + (Math.random() - 0.5) * 30}px`;
     el.style.top = `${y}px`;
     this.popLayer.appendChild(el);

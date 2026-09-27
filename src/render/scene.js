@@ -7,7 +7,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { buildPlayer, buildEnemy } from './models.js';
-import { Particles, Transients, makeRing, makeBubble, makeOrb, makeBeam } from './fx.js';
+import { Particles, Transients, makeRing, makeBubble, makeOrb, makeBeam, makeFlash } from './fx.js';
 
 const PALETTES = {
   1: { bg1: '#05070f', bg2: '#0c2238', bg3: '#23c6ff', rift: '#36d6ff', edge: '#2ec9ff', hemi: '#4a86d8', fog: '#060a14', accent: '#ff3f9a' },
@@ -41,6 +41,9 @@ export class Diorama {
     this.enemyOrder = [];
     this.time = 0;
     this.shakeAmt = 0;
+    this.freeze = 0; // hit-stop: seconds left in which the action runs at a crawl
+    this.kick = 0; // degrees the field of view is narrowed for an impact punch
+    this.baseFov = 36;
     this.speed = 1;
     this.mode = 'title';
     this.onFrame = null;
@@ -307,7 +310,25 @@ export class Diorama {
     if (slotIndex !== null && slotIndex < this.enemyOrder.length) this.enemyOrder.splice(slotIndex, 1, ref);
     else this.enemyOrder.push(ref);
     this.arrange();
+    if (entrance) this.warpIn(u);
     return u;
+  }
+
+  /** A column of light and a ground ring where an enemy rises onto the platform. */
+  warpIn(u) {
+    // Deferred a tick: while a fight is set up, later enemies still shift the earlier ones' spots.
+    setTimeout(() => {
+      if (!this.units.has(u.ref)) return;
+      const color = u.built.glow || '#ff5b6b';
+      const at = u.base.clone();
+      const beam = makeBeam(at.clone().setY(u.height + 4), at.clone().setY(0), color, u.width * 0.12);
+      this.transients.add(beam, this.dur(550) / 1000, (k, dt, o) => {
+        o.material.opacity = (1 - k) ** 2;
+        o.scale.x = o.scale.z = 1 - k * 0.8;
+      });
+      this.ring(u.ref, color, { size: 1.8, dur: 700, at });
+      this.particles.emit(at.clone().setY(0.2), { n: 26, color, speed: 2.4, life: 0.7, size: 0.12, up: 1.6, gravity: 2 });
+    }, 0);
   }
 
   /** Compute unit positions for the current mode and aspect, then fit the camera. */
@@ -367,8 +388,9 @@ export class Diorama {
 
   fitCamera(portrait, snap) {
     const fov = portrait ? 30 : 34;
-    if (this.camera.fov !== fov) {
-      this.camera.fov = fov;
+    if (this.baseFov !== fov) {
+      this.baseFov = fov;
+      this.camera.fov = fov - this.kick;
       this.camera.updateProjectionMatrix();
       this.particles?.setScale((this.h * this.renderer.getPixelRatio()) / (2 * Math.tan((fov * Math.PI) / 360)));
     }
@@ -386,6 +408,8 @@ export class Diorama {
     const pitch = portrait ? 0.46 : 0.28;
     const dir = new THREE.Vector3(0, Math.sin(pitch), Math.cos(pitch));
     const cam = this.camera.clone();
+    cam.fov = this.baseFov; // fit without a running impact kick
+    cam.updateProjectionMatrix();
     const pts = [];
     for (const u of units) {
       for (const dx of [-u.width / 2, u.width / 2]) {
@@ -493,9 +517,13 @@ export class Diorama {
       u.shakeT = 0.28;
       this.particles.emit(at, { n: 12 + Math.min(30, amount), color, speed: 3.2, life: 0.55, size: 0.12, gravity: 3 });
       this.particles.emit(at, { n: 6, color: '#ffffff', speed: 2, life: 0.25, size: 0.18 });
+      this.flash(at, color, u.width * (0.9 + Math.min(1, amount / 20)));
       this.shake(Math.min(0.35, amount / 60));
+      // Heavy hits land with a brief freeze and a punch of the camera.
+      if (amount >= 10) this.impact(0.04 + Math.min(0.05, amount / 500), Math.min(1.6, amount / 14));
     }
     if (blocked > 0) {
+      this.flash(at, '#7cc4ff', u.width * 0.8, 160);
       const b = makeBubble('#7cc4ff');
       b.position.copy(at);
       b.scale.setScalar(u.width * 0.75);
@@ -504,11 +532,11 @@ export class Diorama {
     }
   }
 
-  ring(ref, color, { rise = 0, size = 1, dur = 600 } = {}) {
+  ring(ref, color, { rise = 0, size = 1, dur = 600, at = null } = {}) {
     const u = this.units.get(ref);
     if (!u) return;
     const r = makeRing(color);
-    const base = u.group.position.clone();
+    const base = (at || u.group.position).clone();
     base.y += rise < 0 ? u.height : 0.05;
     r.position.copy(base);
     const w = u.width * size;
@@ -557,8 +585,38 @@ export class Diorama {
     this.particles.emit(this.pointOf(ref, 'center'), { n: 18, color: '#ff7a2f', speed: 1.4, life: 0.7, size: 0.13, up: 1, gravity: -2 });
   }
 
+  /** Bright flash at a point, turned to the camera, for impacts. */
+  flash(at, color, size = 1, ms = 200) {
+    const f = makeFlash(color);
+    f.position.copy(at);
+    this.transients.add(f, this.dur(ms) / 1000, (k, dt, o) => {
+      o.quaternion.copy(this.camera.quaternion);
+      o.scale.setScalar(size * (0.5 + k * 1.1));
+      o.material.opacity = (1 - k) ** 1.5;
+    });
+  }
+
+  /** Hit-stop and field-of-view punch. Skipped for reduced motion. */
+  impact(freeze, kick) {
+    if (this.reduced) return;
+    this.freeze = Math.max(this.freeze, freeze);
+    this.kick = Math.min(2.2, this.kick + kick);
+  }
+
+  /** Fight won: a golden burst rises around the runner. */
+  victory() {
+    if (!this.player) return;
+    const at = this.pointOf('P', 'center');
+    this.ring('P', '#ffc84a', { size: 2.4, dur: 900 });
+    this.ring('P', '#ffe6a8', { size: 1.4, dur: 700, rise: 1 });
+    this.particles.emit(at, { n: 50, color: '#ffc84a', speed: 2.6, life: 1.3, size: 0.12, up: 2, gravity: -0.6 });
+    this.flash(at, '#ffc84a', 2.4, 450);
+  }
+
   explode(ref, color = '#ff3b4f') {
     const at = this.pointOf(ref, 'center');
+    this.flash(at, '#ffe6a8', 3.2, 320);
+    this.impact(0.08, 1.8);
     this.particles.emit(at, { n: 60, color, speed: 6, life: 0.8, size: 0.16, gravity: 2 });
     this.particles.emit(at, { n: 20, color: '#ffe6a8', speed: 3, life: 0.4, size: 0.25 });
     this.shake(0.4);
@@ -572,6 +630,9 @@ export class Diorama {
     const at = this.pointOf(ref, 'center');
     this.particles.emit(at, { n: 50, color: u.built.glow, speed: 4.5, life: 0.9, size: 0.14, gravity: 4 });
     this.particles.emit(at, { n: 14, color: '#ffffff', speed: 2, life: 0.35, size: 0.22 });
+    this.flash(at, u.built.glow || '#ffffff', u.width * 2.2, 380);
+    this.ring(ref, u.built.glow || '#ffffff', { size: 2.6, dur: 750, at: u.base });
+    this.impact(0.07, 0.8);
     this.shake(0.2);
     this.arrange();
   }
@@ -610,7 +671,13 @@ export class Diorama {
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
     if (document.hidden) return;
-    this.time += dt;
+    // During a hit-stop the action (units, particles, effects) crawls; the camera keeps moving.
+    let sdt = dt;
+    if (this.freeze > 0) {
+      this.freeze -= dt;
+      sdt = dt * 0.08;
+    }
+    this.time += sdt;
     const t = this.time;
 
     // Palette easing
@@ -637,7 +704,7 @@ export class Diorama {
     this.debris.instanceMatrix.needsUpdate = true;
 
     // Units
-    for (const u of [...this.units.values()]) this.updateUnit(u, dt, t);
+    for (const u of [...this.units.values()]) this.updateUnit(u, sdt, t);
 
     // Camera
     if (this.mode === 'title') {
@@ -663,9 +730,15 @@ export class Diorama {
       this.shakeAmt *= Math.exp(-dt * 9);
     }
     this.camera.lookAt(this.camLook);
+    const fov = this.baseFov - this.kick;
+    if (Math.abs(this.camera.fov - fov) > 1e-4) {
+      this.camera.fov = fov;
+      this.camera.updateProjectionMatrix();
+    }
+    this.kick = this.kick > 0.01 ? this.kick * Math.exp(-dt * 7) : 0;
 
-    this.particles.update(dt);
-    this.transients.update(dt);
+    this.particles.update(sdt);
+    this.transients.update(sdt);
 
     if (this.composer) this.composer.render();
     else this.renderer.render(this.scene, this.camera);
@@ -816,6 +889,7 @@ export class FlatStage {
   cast() {}
   burnTick() {}
   explode() {}
+  victory() {}
   shake() {}
   setState() {}
 }

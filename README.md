@@ -82,6 +82,7 @@ src/
     combat.js      hand, targeting, overlays, turning engine events into animations
     screens.js     title, map, rewards, event, shop, rest, treasure, end
     cardview.js    card frame, procedural card art, rules text with live numbers
+    juice.js       small DOM effects: bumps, spark bursts, number tweens, card flights, hover tilt
     sfx.js         synthesized sound effects and ambient music (WebAudio)
     shell.js       app shell: install (PWA), service worker, browser gestures turned off
   sw.js            service worker (network first, offline copy), filled in by build.js
