@@ -50,6 +50,9 @@ for (const [name, opts] of Object.entries(VIEWPORTS)) {
     const node = page.locator('.node.reach.n-combat').first();
     if (await node.count()) await node.click({ force: true });
     else await page.locator('.node.reach').first().click({ force: true });
+    await page.waitForTimeout(300);
+    if (f === 0) await shot('03b-map-info');
+    await page.locator('.map-enter').click();
     await page.waitForTimeout(2600);
     await shot(`04-combat-${f}`);
 

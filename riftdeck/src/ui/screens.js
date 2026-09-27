@@ -114,12 +114,10 @@ export function renderMap(app) {
       style: { left: `${p.x}px`, top: `${p.y}px`, color: NODE_COLOR[n.type] },
       html: icon(n.type),
       'aria-label': `${label}${isReach ? ' (available)' : ''}`,
-      disabled: !isReach,
-      tip: `<b>${esc(label)}</b><p>${nodeDesc(n.type)}</p>`,
+      dataset: { node: n.id },
       onclick: () => {
-        if (!isReach) return;
-        app.sfx.play('map');
-        if (R.travel(run, n.id)) app.commit();
+        app.sfx.play(isReach ? 'map' : 'click');
+        showInfo(n);
       },
     });
     if (isReach) btn.classList.add('reach');
@@ -132,6 +130,31 @@ export function renderMap(app) {
   const legend = h('div.legend', ...['combat', 'elite', 'event', 'rest', 'shop', 'treasure'].map((t) =>
     h('span.lg', { style: { color: NODE_COLOR[t] }, html: `${icon(t)}<em>${NODE_LABEL[t]}</em>` })));
 
+  // Info panel: tapping a room explains it; only the Enter button travels.
+  const info = h('div.map-info', h('p.dim.map-info-empty', 'Tap a room to see what waits there.'));
+  function showInfo(n) {
+    for (const b of nodes.querySelectorAll('.node')) b.classList.toggle('picked', b.dataset.node === n.id);
+    const d = roomInfo(run, n, reach.has(n.id), visited.has(n.id) || run.pos === n.id);
+    const enter = d.canEnter && h('button.btn.primary.map-enter', {
+      type: 'button',
+      onclick: () => { app.sfx.play('map'); if (R.travel(run, n.id)) app.commit(); },
+    }, 'Enter');
+    info.replaceChildren(
+      h('span.map-info-icon', { style: { color: NODE_COLOR[n.type] }, html: icon(n.type) }),
+      h('div.map-info-text',
+        h('p.map-info-floor', d.floorLabel),
+        h('h3.map-info-title', d.title),
+        h('p', d.text),
+        d.details.length ? h('ul.map-info-details', ...d.details.map((x) => h('li', x))) : null,
+        d.status && h('p.map-info-status', d.status)),
+      enter || null);
+    requestAnimationFrame(() => {
+      // The panel grows when filled; keep the tapped room visible above it.
+      nodes.querySelector(`[data-node="${n.id}"]`)?.scrollIntoView({ block: 'nearest' });
+      enter?.focus({ preventScroll: true });
+    });
+  }
+
   const scroller = h('div.map-scroll', nodes);
   const el = h('div.map-screen',
     h('div.map-head',
@@ -139,6 +162,7 @@ export function renderMap(app) {
       h('h2', ACT_NAMES[run.act]),
       h('p.dim', run.pos ? 'Choose your next room.' : 'Choose where to enter the layer.')),
     scroller,
+    info,
     legend);
   // Scroll so the current row sits in the lower third.
   requestAnimationFrame(() => {
@@ -149,16 +173,59 @@ export function renderMap(app) {
   return el;
 }
 
-function nodeDesc(type) {
-  return {
-    combat: 'A fight against rift creatures.',
-    elite: 'A tough fight. Drops a relic.',
-    rest: 'Recover HP or upgrade a card.',
-    shop: 'Spend Shards on cards, relics and Cells, or remove a card.',
-    event: 'Something unexpected.',
-    treasure: 'A supply cache with a relic.',
-    boss: 'The guardian of this layer.',
-  }[type];
+const BOSS_INFO = {
+  gatekeeper: 'A living seal that guards the first layer. It shields itself, strikes hard and charges a huge Rift Slam every few turns. Save Shield for that turn.',
+  leviathan: 'A current given form. It floods your draw pile with Static and grows stronger once it drops below half HP.',
+  heart: 'The source of the rift. It cannot lose more than 120 HP per turn, so this is a long fight. Its multi-hit barrage punishes low Shield.',
+};
+
+/** Everything the map info panel shows about a room. */
+export function roomInfo(run, n, reachable, visited) {
+  const floor = (run.act - 1) * (MAP_ROWS + 1) + n.row + 1;
+  const d = { title: NODE_LABEL[n.type], text: '', details: [], floorLabel: n.type === 'boss' ? `Floor ${floor} · End of act ${run.act}` : `Floor ${floor}`, status: '', canEnter: reachable };
+  const hp = `Your HP: ${run.hp}/${run.maxHp}`;
+  switch (n.type) {
+    case 'combat':
+      d.text = 'A fight against one to three creatures of this layer.';
+      d.details = ['Reward: Shards and a choice of 3 cards, sometimes a Cell'];
+      if (run.easyLeft > 0) d.details.push('The first fights of each act use weaker enemies');
+      d.details.push(hp);
+      break;
+    case 'elite':
+      d.text = 'A powerful guardian. Much harder than a normal fight, but worth it.';
+      d.details = ['Reward: a relic, more Shards and better card odds', hp];
+      if (run.hp / run.maxHp < 0.5) d.details.push('Careful: you are below half HP');
+      break;
+    case 'rest': {
+      const heal = Math.min(R.restHealAmount(run), run.maxHp - run.hp);
+      d.text = 'A calm pocket in the rift. You can do one thing here.';
+      d.details = [R.canRecover(run) ? `Recover: heal ${heal} HP` : 'Recover: blocked by Rift Engine', 'Tune: upgrade one card', hp];
+      break;
+    }
+    case 'shop':
+      d.text = 'The Drift Market. Buy cards, relics and Cells, or pay to remove a weak card.';
+      d.details = [`Your Shards: ${run.shards}`, `Card removal: ${R.removalPrice(run)} Shards`];
+      break;
+    case 'event':
+      d.text = 'Something unexpected: a find, a trade or a trap. You choose how to react.';
+      d.details = ['Choices can cost HP or Shards, and some can start a fight'];
+      break;
+    case 'treasure':
+      d.text = 'A sealed supply cache. No fight.';
+      d.details = ['Contains a relic and some Shards'];
+      break;
+    case 'boss': {
+      const id = ENCOUNTERS[run.act].boss[0][0];
+      d.title = ENEMIES[id].name;
+      d.text = BOSS_INFO[id] || 'The guardian of this layer.';
+      d.details = [run.act < R.FINAL_ACT ? 'Reward: a rare card, a boss relic, then you descend and heal' : 'Defeat it to finish the run', hp];
+      break;
+    }
+    default:
+  }
+  if (visited) d.status = run.pos === n.id ? 'You are here.' : 'Already visited.';
+  else if (!reachable) d.status = 'Not reachable from where you are.';
+  return d;
 }
 
 // ============================================================== rewards ===
