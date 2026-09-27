@@ -1,11 +1,12 @@
 // App controller: owns the run, the layers, the HUD, modals and routing
 // between screens. Every state change goes through commit() -> save + route.
 
-import { h, clear, esc } from './dom.js';
+import { h, clear, esc, prefersReducedMotion } from './dom.js';
 import { icon, CELL_COLOR } from './icons.js';
 import { cardEl } from './cardview.js';
 import { relicEl, relicRow, cellEl, shardsHtml } from './widgets.js';
 import { Tooltips } from './tooltip.js';
+import { bump, tweenNumber, flyCard, installCardTilt } from './juice.js';
 import { Sfx } from './sfx.js';
 import { CombatView, safeBottom } from './combat.js';
 import * as S from './screens.js';
@@ -40,8 +41,11 @@ export class App {
     this.toastEl = h('div.toast', { role: 'status', hidden: true });
     this.flashEl = h('div.dmg-flash');
     this.actBanner = h('div.act-banner', { hidden: true });
-    root.append(this.canvas, this.stage, this.screenEl, this.hud, this.actBanner, this.modalEl, this.toastEl, this.flashEl);
+    this.vignette = h('div.low-hp-vignette');
+    this.flyLayer = h('div.fly-layer');
+    root.append(this.canvas, this.stage, this.vignette, this.screenEl, this.hud, this.actBanner, this.modalEl, this.flyLayer, this.toastEl, this.flashEl);
     this.tips = new Tooltips(root);
+    installCardTilt(root);
 
     try {
       this.scene = new Diorama(this.canvas, { quality: this.settings.quality });
@@ -106,6 +110,7 @@ export class App {
 
   toTitle() {
     this.onTitle = true;
+    this.root.classList.remove('defeat', 'low-hp');
     this.endCombatView();
     this.closeAllModals();
     this.hud.hidden = true;
@@ -115,6 +120,7 @@ export class App {
   }
 
   startRun(seed) {
+    this.forgetHud();
     store.clearRun();
     this.run = R.newRun(seed);
     this.shownAct = null;
@@ -123,6 +129,7 @@ export class App {
   }
 
   continueRun() {
+    this.forgetHud();
     this.onTitle = false;
     this.shownAct = this.run.act;
     this.route();
@@ -130,6 +137,7 @@ export class App {
 
   route() {
     this.closeAllModals();
+    this.root.classList.remove('defeat');
     const run = this.run;
     if (!run) { this.toTitle(); return; }
     this.onTitle = false;
@@ -171,11 +179,17 @@ export class App {
   }
 
   setScreen(el, name) {
+    const changed = this.screenEl.dataset.screen !== name;
+    const scroll = this.screenEl.scrollTop;
     clear(this.screenEl);
     this.screenEl.dataset.screen = name;
+    // Re-rendering the same screen (a reward claimed, an item bought) must not replay its entrance.
+    if (!changed) el.classList.add('still');
     this.screenEl.appendChild(el);
-    this.screenEl.scrollTop = 0;
+    this.screenEl.scrollTop = changed ? 0 : scroll;
     this.tips.hide();
+    // A new screen fades in over the diorama; a re-render of the same one stays put.
+    if (changed && !prefersReducedMotion()) this.screenEl.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, easing: 'ease-out' });
   }
 
   leaveRoom() {
@@ -204,6 +218,7 @@ export class App {
       this.combat.destroy();
       this.combat = null;
     }
+    this.root.classList.remove('low-hp');
     this.combatStartSave = null;
   }
 
@@ -233,6 +248,13 @@ export class App {
 
   // ---------------------------------------------------------------- hud ---
 
+  /** HUD values last shown; changes against them animate. Cleared when a run (re)starts. */
+  forgetHud() {
+    this.shownShards = undefined;
+    this.shownRelics = undefined;
+    this.shownHp = undefined;
+  }
+
   hudHeight() {
     return this.hud.hidden ? 0 : this.hud.getBoundingClientRect().height;
   }
@@ -243,13 +265,26 @@ export class App {
     this.hud.hidden = false;
     clear(this.hud);
     this.hudHp = h('span.hud-hp', { tip: () => `<b>Health</b><p>${run.hp} of ${run.maxHp}. The run ends at 0.</p>` });
-    this.hudShards = h('span.hud-shards', { html: shardsHtml(run.shards), tip: '<b>Shards</b><p>Currency for the Drift Market.</p>' });
+    this.hudShards = h('span.hud-shards', { html: shardsHtml(this.shownShards ?? run.shards), tip: '<b>Shards</b><p>Currency for the Drift Market.</p>' });
+    // Shards count up or down to the new amount instead of jumping.
+    if (this.shownShards !== undefined && this.shownShards !== run.shards) {
+      tweenNumber(this.hudShards, this.shownShards, run.shards, shardsHtml);
+      bump(this.hudShards);
+    }
+    this.shownShards = run.shards;
     this.hudCells = h('span.hud-cells');
     const floor = h('span.hud-floor', h('b', `Act ${run.act}`), h('small', `Floor ${run.floor}`));
-    const deckBtn = h('button.hud-btn', { type: 'button', 'aria-label': 'View deck', onclick: () => this.showDeck(), html: `${icon('deck')}<b>${run.deck.length}</b>` });
+    const deckBtn = this.deckBtn = h('button.hud-btn', { type: 'button', 'aria-label': 'View deck', onclick: () => this.showDeck(), html: `${icon('deck')}<b>${run.deck.length}</b>` });
     const menuBtn = h('button.hud-btn', { type: 'button', 'aria-label': 'Menu', onclick: () => this.showSettings(true), html: icon('menu') });
     this.hudRelics = h('div.hud-relics');
-    for (const r of run.relics) this.hudRelics.appendChild(relicEl(r.id, { counter: r.counter }));
+    // Relics gained since the last render pop in.
+    const known = this.shownRelics;
+    this.shownRelics = new Set(run.relics.map((r) => r.id));
+    for (const r of run.relics) {
+      const el = relicEl(r.id, { counter: r.counter });
+      if (known && !known.has(r.id)) el.classList.add('relic-new');
+      this.hudRelics.appendChild(el);
+    }
     this.hud.append(h('div.hud-main', this.hudHp, this.hudShards, h('span.hud-spacer'), floor, deckBtn, menuBtn), h('div.hud-sub', this.hudCells, this.hudRelics));
     this.updateHud({ hp: run.hp, maxHp: run.maxHp });
     this.renderCells(this.combat);
@@ -257,8 +292,18 @@ export class App {
 
   updateHud({ hp, maxHp }) {
     if (!this.hudHp) return;
+    const was = this.shownHp;
+    this.shownHp = hp;
+    if (was !== undefined && hp !== was) bump(this.hudHp, hp < was ? 'hurt' : 'healed');
     this.hudHp.innerHTML = `${icon('heart')}<b>${Math.max(0, hp)}<small>/${maxHp}</small></b>`;
     this.hudHp.classList.toggle('low', hp / maxHp < 0.3);
+    this.root.classList.toggle('low-hp', !!this.combat && hp > 0 && hp / maxHp < 0.3);
+  }
+
+  /** A card that joined the deck flies from where it was shown into the deck button. */
+  flyToDeck(card, fromRect) {
+    const node = cardEl(card.id, card.up, { cls: 'static' });
+    flyCard(this.flyLayer, node, fromRect, this.deckBtn, () => this.sfx.play('draw'));
   }
 
   renderCells(combatView) {
@@ -350,8 +395,13 @@ export class App {
     const m = {
       el: box, dismissible,
       close: () => {
-        backdrop.remove();
+        if (!this.modals.includes(m)) return;
         this.modals = this.modals.filter((x) => x !== m);
+        // Fades out, but is gone for input and assistive tech right away.
+        backdrop.classList.add('closing');
+        backdrop.setAttribute('aria-hidden', 'true');
+        backdrop.inert = true;
+        setTimeout(() => backdrop.remove(), prefersReducedMotion() ? 0 : 170);
         onClose?.();
       },
       setActions: (list) => {
@@ -422,7 +472,11 @@ export class App {
     const fill = () => {
       clear(grid);
       if (!cards.length) grid.appendChild(h('p.dim', 'No cards.'));
-      for (const c of cards) grid.appendChild(cardEl(c.id, c.up || (showUp && canUpgrade(c.id, c.up)), { cls: 'static' }));
+      cards.forEach((c, i) => {
+        const el = cardEl(c.id, c.up || (showUp && canUpgrade(c.id, c.up)), { cls: 'static' });
+        el.style.setProperty('--i', String(Math.min(i, 24)));
+        grid.appendChild(el);
+      });
     };
     fill();
     const content = h('div', note && h('p.dim', note), grid);
@@ -482,10 +536,17 @@ export class App {
   cardPicker(options, title, onPick, allowSkip = true, dismissible = allowSkip) {
     let chosen = null;
     const row = h('div.card-pick-row');
+    const take = (i) => {
+      const rect = row.children[i].getBoundingClientRect();
+      m.close();
+      onPick(i);
+      this.sfx.play('card');
+      this.flyToDeck(options[i], rect);
+    };
     options.forEach((c, i) => {
       const el = cardEl(c.id, c.up, { cls: 'pickable big' });
       el.addEventListener('click', () => {
-        if (chosen === i) { m.close(); onPick(i); this.sfx.play('card'); return; }
+        if (chosen === i) { take(i); return; }
         chosen = i;
         this.sfx.play('click');
         for (const [k, child] of [...row.children].entries()) child.classList.toggle('picked', k === i);
@@ -495,7 +556,7 @@ export class App {
     });
     const actions = () => [
       allowSkip && { label: 'Skip', onclick: () => { m.close(); onPick(null); } },
-      { label: chosen === null ? 'Take card' : `Take ${cardName(options[chosen].id, options[chosen].up)}`, primary: true, disabled: chosen === null, onclick: () => { m.close(); onPick(chosen); this.sfx.play('card'); } },
+      { label: chosen === null ? 'Take card' : `Take ${cardName(options[chosen].id, options[chosen].up)}`, primary: true, disabled: chosen === null, onclick: () => take(chosen) },
     ].filter(Boolean);
     const m = this.openModal(row, { title, sub: 'Tap a card to select it.', wide: true, actions: actions(), dismissible });
   }

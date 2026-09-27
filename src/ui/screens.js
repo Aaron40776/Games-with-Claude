@@ -124,6 +124,8 @@ export function renderMap(app) {
         showInfo(n);
       },
     });
+    // Rooms appear row by row from the entrance up to the boss.
+    btn.style.setProperty('--d', `${(n.id === 'boss' ? MAP_ROWS : n.row) * 0.035}s`);
     if (isReach) btn.classList.add('reach');
     if (visited.has(n.id)) btn.classList.add('visited');
     if (isCur) btn.classList.add('current');
@@ -368,7 +370,7 @@ export function renderShop(app) {
   const run = app.run;
   const room = run.room;
   const stock = room.stock;
-  const buy = (i) => {
+  const buy = (i, node) => {
     const item = stock[i];
     if (item.sold) return;
     if (run.shards < item.price) { app.sfx.play('error'); app.toast('Not enough Shards.'); return; }
@@ -379,7 +381,12 @@ export function renderShop(app) {
     if (item.kind === 'relic') { preview = relicRow(item.id); name = RELICS[item.id].name; }
     if (item.kind === 'cell') { preview = h('div.relic-row', h('span.relic.big', { style: { color: CELL_COLOR[item.id] }, html: icon('cell') }), h('div.relic-info', h('b', CELLS[item.id].name), h('span.dim', CELLS[item.id].desc))); name = CELLS[item.id].name; }
     app.confirm(`Buy ${name}?`, preview, `Buy for ${item.price}`, () => {
-      if (R.buyItem(run, i)) { app.sfx.play('coin'); app.commit(); }
+      const rect = node?.querySelector('.card')?.getBoundingClientRect();
+      if (R.buyItem(run, i)) {
+        app.sfx.play('coin');
+        app.commit();
+        if (item.kind === 'card') app.flyToDeck(item, rect);
+      }
     });
   };
   const priceTag = (item) => h(`span.price${run.shards < item.price ? '.poor' : ''}${item.sale ? '.sale' : ''}`, { html: item.sold ? 'Sold' : shardsHtml(item.price) });
@@ -389,7 +396,7 @@ export function renderShop(app) {
   const cells = h('div.shop-row');
   stock.forEach((item, i) => {
     if (item.kind === 'card') {
-      const wrap = h(`button.shop-card${item.sold ? '.sold' : ''}`, { type: 'button', onclick: () => buy(i), disabled: item.sold, 'aria-label': `${CARDS[item.id].name}, ${item.price} Shards` },
+      const wrap = h(`button.shop-card${item.sold ? '.sold' : ''}`, { type: 'button', onclick: (e) => buy(i, e.currentTarget), disabled: item.sold, 'aria-label': `${CARDS[item.id].name}, ${item.price} Shards` },
         cardEl(item.id, item.up, { cls: 'static' }), priceTag(item));
       if (item.sale) wrap.appendChild(h('span.sale-tag', 'Sale'));
       cards.appendChild(wrap);
