@@ -8,10 +8,11 @@
 import * as esbuild from 'esbuild';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import { serve } from './tools/serve.js';
 
-const ROOT = path.dirname(new URL(import.meta.url).pathname);
+const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const r = (...p) => path.join(ROOT, ...p);
 const DIST = r('dist');
 const watch = process.argv.includes('--watch');

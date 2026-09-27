@@ -98,6 +98,8 @@ export class CombatView {
     if (this.destroyed) return;
     this.busy = false;
     this.refresh();
+    // A fight can already be over after setup (e.g. start-of-turn damage), so don't wait for input.
+    await this.checkOutcome();
   }
 
   destroy() {
@@ -766,6 +768,7 @@ export class CombatView {
     this.busy = true;
     this.g.useCell(slot, targetRef);
     await this.process();
+    if (this.destroyed) return;
     this.busy = false;
     this.refresh();
     await this.checkOutcome();

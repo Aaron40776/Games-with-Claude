@@ -308,8 +308,13 @@ test('cell events require a free slot', () => {
   run.cells = ['blast_cell', 'blast_cell', 'blast_cell'];
   run.shards = 200;
   run.room = { type: 'event', eventId: 'drifting_courier', stage: 'choose', options: null, result: null, queue: [] };
-  const buy = R.eventOptions(run).find((o) => o.label === 'Buy');
-  assert.ok(buy.disabled);
+  const buy = () => R.eventOptions(run).find((o) => o.label === 'Buy');
+  assert.ok(buy().disabled);
+  // It sells 2 Cells, so a single free slot is not enough.
+  run.cells = ['blast_cell', 'blast_cell', null];
+  assert.ok(buy().disabled);
+  run.cells = ['blast_cell', null, null];
+  assert.ok(!buy().disabled);
 });
 
 test('buying Membership Chip discounts the rest of the shop', () => {

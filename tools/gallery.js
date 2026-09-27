@@ -5,8 +5,9 @@
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const ROOT = path.dirname(new URL(import.meta.url).pathname) + '/..';
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const OUT = path.join(ROOT, 'shots', 'gallery');
 fs.mkdirSync(OUT, { recursive: true });
 const phone = process.argv.includes('--phone');
@@ -18,7 +19,7 @@ const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-await page.goto('file://' + path.join(ROOT, 'dist/index.html'));
+await page.goto(pathToFileURL(path.join(ROOT, 'dist/index.html')).href);
 await page.waitForTimeout(800);
 const tag = phone ? 'phone' : 'desk';
 const shot = (n) => page.screenshot({ path: path.join(OUT, `${tag}-${n}.png`) });
