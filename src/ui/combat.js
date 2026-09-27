@@ -678,6 +678,8 @@ export class CombatView {
   handleKey(e) {
     if (this.app.modalOpen() || !this.canInteract() || this.ptr || this.dragUid) return;
     if (e.target.closest?.('input, textarea')) return;
+    // Ctrl/Cmd/Alt combos are shortcuts (e.g. Ctrl+0), not card keys.
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     const k = e.key;
     if (/^[0-9]$/.test(k)) {
       const idx = k === '0' ? 9 : Number(k) - 1;

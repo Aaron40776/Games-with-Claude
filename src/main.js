@@ -2,9 +2,11 @@
 // republish keeps the current run.
 
 import { App } from './ui/app.js';
+import { initShell } from './ui/shell.js';
 
 function start(data) {
   const root = document.getElementById('app');
+  initShell(root);
   const app = new App(root);
   window.__riftdeck = app;
   app.boot(data || {});

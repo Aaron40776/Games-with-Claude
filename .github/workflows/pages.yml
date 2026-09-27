@@ -36,7 +36,8 @@ jobs:
       - name: Assemble site
         run: |
           mkdir -p site
-          cp dist/index.html site/index.html
+          cp dist/index.html dist/manifest.webmanifest dist/sw.js site/
+          cp -r dist/icons site/icons
           touch site/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with:

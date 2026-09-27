@@ -11,6 +11,19 @@ three.js and plain JavaScript modules. There is no framework.
 published there automatically (`.github/workflows/pages.yml`). Locally: `npm install && npm run build`,
 then open `dist/index.html`.
 
+## Install as an app
+
+The published game is a Progressive Web App: installed, it gets its own icon, runs full screen
+without the browser bar and starts offline.
+
+- **iPhone/iPad:** open the page, tap *Share*, then *Add to Home Screen* (the title screen's
+  *Install app* shows the steps). The installed app keeps its own save, separate from the browser.
+- **PC (Chrome/Edge):** *Install app* on the title screen, or the install icon in the address bar.
+  Riftdeck then opens in its own window and appears in the start menu.
+
+Updates arrive by themselves: online, the app always loads the newest version from GitHub Pages and
+keeps a copy for offline play (`src/sw.js`).
+
 ## Playing
 
 - **Your turn:** you get 3 Energy and draw 5 cards. Swipe a card up into the field to play it
@@ -44,8 +57,9 @@ npm run dev          # rebuild on change + serve http://localhost:5173
 npm test             # engine unit tests + 40 full bot runs (node:test)
 npm run sim -- 500   # balance simulation: win rate, deaths per encounter, HP lost per fight
 npm run smoke        # headless browser playthrough, screenshots in shots/
-npm run e2e          # real pointer input + rare scenarios (summons, act change, death, reload…)
+npm run e2e          # real pointer input, rare scenarios (summons, act change, death, reload…), install/offline
 npm run gallery      # screenshots of every screen (add -- --phone for the phone layout)
+npm run icons        # re-render the app icons in assets/icons/ from the SVG in tools/icons.js
 ```
 
 ## Project structure
@@ -69,9 +83,12 @@ src/
     screens.js     title, map, rewards, event, shop, rest, treasure, end
     cardview.js    card frame, procedural card art, rules text with live numbers
     sfx.js         synthesized sound effects and ambient music (WebAudio)
-tools/             sim bot, balance sim, browser tests
+    shell.js       app shell: install (PWA), service worker, browser gestures turned off
+  sw.js            service worker (network first, offline copy), filled in by build.js
+assets/icons/      app icons (rendered by tools/icons.js, committed)
+tools/             sim bot, balance sim, browser tests (pwa.js: install/offline), icons, static server
 tests/             node:test suite
-build.js           esbuild bundle -> single HTML file with inlined fonts
+build.js           esbuild bundle -> single HTML file with inlined fonts, plus manifest, icons, sw.js
 ```
 
 ### How the pieces fit
