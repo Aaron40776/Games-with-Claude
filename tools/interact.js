@@ -92,6 +92,22 @@ const idle = (page) => page.waitForFunction(() => !window.__riftdeck.combat?.bus
     const s3 = await state(page);
     check(s3.shield > 0, `desktop: drag-up skill gave Shield (${s3.shield})`);
   }
+  // Keys are ignored while a card is held; an unaffordable card says so instead of arming.
+  {
+    await page.evaluate(() => { const cv = window.__riftdeck.combat; cv.g.energy = 0; cv.refresh(); });
+    const bx = await stableBox(page.locator('.card.in-hand').first());
+    await page.mouse.move(bx.x + bx.width / 2, bx.y + 30);
+    await page.mouse.down();
+    await page.mouse.move(bx.x + bx.width / 2, 250, { steps: 8 });
+    await page.keyboard.press('e');
+    await page.waitForTimeout(300);
+    const mid = await page.evaluate(() => ({ turn: window.__riftdeck.combat.g.turn, label: document.querySelector('.play-zone span')?.textContent, armed: document.querySelector('.play-zone')?.classList.contains('armed') }));
+    check(mid.turn === 1, 'desktop: pressing E while holding a card does nothing');
+    check(mid.label === 'Not enough Energy' && !mid.armed, `desktop: an unaffordable held card shows "${mid.label}" and does not arm`);
+    await page.mouse.up();
+    await idle(page);
+    await page.evaluate(() => { const cv = window.__riftdeck.combat; cv.g.energy = 3; cv.refresh(); });
+  }
   // Keyboard: select card 1 and press Enter, then E ends the turn
   const s4 = await state(page);
   await page.keyboard.press('1');
@@ -170,6 +186,36 @@ async function swipe(page, cdp, from, to, steps = 8) {
     await page.waitForTimeout(400);
     const s4 = await state(page);
     check(s4.energy === beforeShort.energy, 'phone: a short swipe below the play line is cancelled');
+  }
+  // Browsing the fan sideways with a finger that drifts upward stays in the hand and selects.
+  {
+    const s0 = await state(page);
+    const first = await stableBox(page.locator('.card.in-hand').first());
+    const last = await stableBox(page.locator('.card.in-hand').last());
+    await swipe(page, cdp, { x: first.x + 20, y: first.y + 40 }, { x: last.x + last.width - 20, y: first.y + 15 }, 10);
+    await page.waitForTimeout(300);
+    const s1 = await state(page);
+    const sel = await page.evaluate(() => window.__riftdeck.combat.selected);
+    check(s1.energy === s0.energy && !!sel, 'phone: scrubbing with upward drift browses and selects instead of picking a card up');
+    await page.evaluate(() => window.__riftdeck.combat.deselect());
+  }
+  // Optional tap mode: a second tap with a little wobble still plays the card.
+  {
+    await page.evaluate(() => { window.__riftdeck.settings.cardPlay = 'tap'; });
+    const s0 = await state(page);
+    const i = s0.hand.findIndex((id) => id === 'deflect' || id === 'pulse_shot');
+    if (i >= 0) {
+      const bT = await stableBox(page.locator('.card.in-hand').nth(i));
+      await page.touchscreen.tap(bT.x + bT.width / 2, bT.y + 20);
+      const big = await stableBox(page.locator('.card.in-hand.selected'));
+      const cx = big.x + big.width / 2;
+      const cy = big.y + big.height / 2;
+      await swipe(page, cdp, { x: cx, y: cy }, { x: cx + 9, y: cy - 8 }, 2);
+      await idle(page);
+      const s1 = await state(page);
+      check(s1.energy < s0.energy, 'phone (tap mode): a wobbly second tap still plays the card');
+    }
+    await page.evaluate(() => { window.__riftdeck.settings.cardPlay = 'swipe'; });
   }
   // Map: tapping a room shows info, only Enter travels.
   await page.evaluate(() => { const app = window.__riftdeck; app.endCombatView(); app.run.room = null; app.run.pos = null; app.commit(); });

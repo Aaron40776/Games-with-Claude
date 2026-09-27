@@ -183,9 +183,11 @@ p { margin: 0; }
 .card.lifted { filter: drop-shadow(0 0.8em 1.4em rgba(0, 0, 0, 0.65)) drop-shadow(0 0 0.6em color-mix(in srgb, var(--tc) 60%, transparent)); }
 .card.lifted:not(.playable) { filter: drop-shadow(0 0.8em 1.4em rgba(0, 0, 0, 0.65)) brightness(0.85); }
 .card.selected { filter: drop-shadow(0 0 0.35em #fff) drop-shadow(0 0 1em var(--tc)); }
-.card.dragging { transition: transform 0.05s linear; transform-origin: 50% 32%; z-index: 300 !important; cursor: grabbing; filter: drop-shadow(0 1em 1.6em rgba(0, 0, 0, 0.6)); }
-.card.dragging.will-play { filter: drop-shadow(0 0 0.5em #fff) drop-shadow(0 0 1.3em var(--tc)); }
-.card.cast { transform-origin: 50% 32%; filter: brightness(1.8) drop-shadow(0 0 1.4em var(--tc)); }
+/* A held card keeps its dimmed look when it can't be played; the play zone explains why. */
+.card.in-hand.dragging { transition: transform 0.05s linear; z-index: 300 !important; cursor: grabbing; filter: drop-shadow(0 1em 1.6em rgba(0, 0, 0, 0.6)); }
+.card.in-hand.dragging:not(.playable) { filter: brightness(0.68) saturate(0.65) drop-shadow(0 1em 1.6em rgba(0, 0, 0, 0.6)); }
+.card.in-hand.dragging.will-play { filter: drop-shadow(0 0 0.5em #fff) drop-shadow(0 0 1.3em var(--tc)); }
+.card.cast { filter: brightness(1.8) drop-shadow(0 0 1.4em var(--tc)); }
 .card.will-play { filter: drop-shadow(0 0 1.1em var(--tc)) brightness(1.15); }
 .card.leaving { pointer-events: none; transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.35s; }
 .card.fading { animation: fadeout 0.45s forwards; }

@@ -1,7 +1,7 @@
 // Combat screen: hand of cards, unit overlays, targeting and the event
 // playback that turns engine events into animations.
 
-import { h, clear, wait, esc, clamp } from './dom.js';
+import { h, clear, wait, esc, clamp, prefersReducedMotion } from './dom.js';
 import { cardEl, fillCard, cardKeywords, keywordTipHtml, TYPE_COLOR } from './cardview.js';
 import { icon, STATUS_ICON, INTENT_COLOR, CELL_COLOR } from './icons.js';
 import { STATUSES } from '../data/statuses.js';
@@ -391,15 +391,25 @@ export class CombatView {
     const dx = e.clientX - p.x;
     const dy = e.clientY - p.y;
     const dist = Math.hypot(dx, dy);
+    // Above this line the finger has clearly left the fan of resting cards.
+    const fanTop = (this.handGeom?.top ?? window.innerHeight) + 10;
     if (p.mode === 'press') {
-      // Mouse, or a card that is already enlarged: any real movement picks it up.
-      if ((p.type === 'mouse' || p.wasSelected) && dist > 7) this.beginDrag(p.uid);
-      // Touch on the fan: upward swipe picks the card up, sideways browses the hand.
-      else if (dy < -12 && -dy > Math.abs(dx) * 0.7) this.beginDrag(p.uid);
-      else if (Math.abs(dx) > 10) { p.mode = 'scrub'; p.scrubY = e.clientY; }
+      if (p.wasSelected) {
+        // An enlarged card follows any clear movement. In tap mode a second tap
+        // may wobble a little without turning into a drag.
+        if (dist > (this.tapMode() ? 24 : 10)) this.beginDrag(p.uid);
+      } else if (p.type === 'mouse') {
+        if (dist > 7) this.beginDrag(p.uid);
+      } else if (dy < -12 && -dy > Math.abs(dx) * 0.7 && e.clientY < fanTop) {
+        // Touch on the fan: a clear upward swipe out of the fan picks the card up.
+        this.beginDrag(p.uid);
+      } else if (Math.abs(dx) > 10) {
+        p.mode = 'scrub';
+      }
     }
     if (p.mode === 'scrub') {
-      if (e.clientY < Math.min(p.y, p.scrubY) - 24) this.beginDrag(this.inspected || p.uid);
+      // Browsing the fan sideways; only leaving the fan upwards picks the card up.
+      if (e.clientY < fanTop - 16) this.beginDrag(this.inspected || p.uid);
       else {
         const uid = this.cardAtX(e.clientX);
         if (uid) this.setInspected(uid);
@@ -434,16 +444,19 @@ export class CombatView {
 
   beginDrag(uid) {
     const c = this.cardByUid(uid);
-    if (!c) return;
+    const el = this.cardEls.get(uid);
+    if (!c || !el) return;
     this.ptr.mode = 'drag';
     this.dragUid = uid;
-    this.dragTilt = 0;
-    this.dragPos = null;
-    this.dragFrameX = null;
+    // Measured once per drag: reading computed styles every frame forces style recalcs.
+    const cw = this.cardWidth();
+    this.drag = {
+      cw, ch: cw * 1.4, playLine: this.playLine(), playable: this.g.canPlay(c),
+      x: 0, y: 0, scale: 1.08, tilt: 0, lastX: null, lastT: 0, still: !!prefersReducedMotion(),
+    };
     this.selected = null;
     this.inspected = uid;
     this.hideHint();
-    const el = this.cardEls.get(uid);
     el.classList.add('dragging');
     this.app.tips.hide();
     this.tipShown = false;
@@ -454,14 +467,17 @@ export class CombatView {
   updateDrag(x, y) {
     const c = this.cardByUid(this.dragUid);
     const el = this.cardEls.get(this.dragUid);
-    if (!c || !el) return;
-    const cw = this.cardWidth();
-    const ch = cw * 1.4;
+    const d = this.drag;
+    if (!c || !el || !d) return;
     const alive = this.g.aliveEnemies();
     const targeted = this.g.needsTarget(c) && alive.length > 0;
-    const inZone = y < this.playLine();
+    const inZone = y < d.playLine;
     let scale = 1.08;
-    if (targeted) {
+    let armed = false;
+    let label;
+    if (!d.playable) {
+      label = this.g.flag(c, 'unplayable') ? "This card can't be played" : 'Not enough Energy';
+    } else if (targeted) {
       // With a single enemy, anywhere in the field counts as aiming at it.
       const target = this.targetAt(x, y) || (alive.length === 1 && inZone ? alive[0].ref : null);
       if (target !== this.aimTarget) {
@@ -469,36 +485,59 @@ export class CombatView {
         this.highlightTarget(target);
         fillCard(el, c.id, c.up, { g: this.g, inst: c, target: target ? this.g.enemyByRef(target) : null, cost: this.g.costOf(c) });
       }
+      armed = !!target;
       if (target) scale = 0.68;
-      el.classList.toggle('will-play', !!target);
-      this.showPlayZone({ armed: !!target, label: target ? 'Release to attack' : alive.length === 1 ? 'Drag into the field' : 'Drag onto an enemy' });
+      label = target ? 'Release to attack' : alive.length === 1 ? 'Drag into the field' : 'Drag onto an enemy';
     } else {
-      el.classList.toggle('will-play', inZone);
-      this.showPlayZone({ armed: inZone, label: inZone ? 'Release to play' : 'Drag into the field' });
+      armed = inZone;
+      label = inZone ? 'Release to play' : 'Drag into the field';
     }
-    this.dragPos = { x, y, scale };
+    el.classList.toggle('will-play', armed);
+    this.showPlayZone({ armed, label });
+    d.x = x;
+    d.y = y;
+    d.scale = scale;
     this.applyDragTransform();
   }
 
-  /** Runs every frame while dragging: the card tilts with its speed and settles when the pointer rests. */
-  applyDragTransform() {
-    const el = this.dragUid && this.cardEls.get(this.dragUid);
-    const p = this.dragPos;
-    if (!el || !p) return;
-    const cw = this.cardWidth();
-    const ch = cw * 1.4;
-    // The pointer holds the card a third of the way down, so the target stays visible above it.
-    el.style.transform = `translate(${p.x - cw / 2}px, ${p.y - ch * 0.32}px) rotate(${this.dragTilt.toFixed(2)}deg) scale(${p.scale})`;
+  /**
+   * Transform for a card held at a point. Cards scale and rotate around their
+   * bottom centre (the hand's transform-origin), so the translation is solved
+   * such that the grip point, a third of the way down the card, stays under
+   * the pointer for any scale and tilt. Keeping one origin avoids jumps when
+   * a card is picked up or put back.
+   */
+  heldTransform(x, y, scale, tiltDeg, dims = this.drag) {
+    const { cw, ch } = dims;
+    const reach = ch * scale * 0.68; // bottom centre -> grip point
+    const a = (tiltDeg * Math.PI) / 180;
+    const tx = x - cw / 2 - reach * Math.sin(a);
+    const ty = y - ch + reach * Math.cos(a);
+    return `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) rotate(${tiltDeg.toFixed(2)}deg) scale(${scale})`;
   }
 
+  applyDragTransform() {
+    const el = this.dragUid && this.cardEls.get(this.dragUid);
+    const d = this.drag;
+    if (!el || !d) return;
+    el.style.transform = this.heldTransform(d.x, d.y, d.scale, d.tilt);
+  }
+
+  /** Every frame while dragging: tilt follows horizontal speed and settles at rest, independent of frame rate. */
   dragFrame() {
-    if (!this.dragUid || !this.dragPos) return;
-    const x = this.dragPos.x;
-    const v = this.dragFrameX === null ? 0 : x - this.dragFrameX;
-    this.dragFrameX = x;
-    const tilt = clamp(this.dragTilt * 0.75 + v * 0.35, -10, 10);
-    if (Math.abs(tilt - this.dragTilt) > 0.05) {
-      this.dragTilt = Math.abs(tilt) < 0.1 ? 0 : tilt;
+    const d = this.dragUid && this.drag;
+    if (!d || d.still) return;
+    const now = performance.now();
+    if (d.lastX === null) { d.lastX = d.x; d.lastT = now; return; }
+    const dt = Math.min(0.1, Math.max(0.001, (now - d.lastT) / 1000));
+    const speed = (d.x - d.lastX) / dt; // px per second
+    d.lastX = d.x;
+    d.lastT = now;
+    const goal = clamp(speed * 0.012, -9, 9);
+    let tilt = goal + (d.tilt - goal) * Math.exp(-dt * 12);
+    if (Math.abs(tilt) < 0.1) tilt = 0;
+    if (tilt !== d.tilt) {
+      d.tilt = tilt;
       this.applyDragTransform();
     }
   }
@@ -507,7 +546,9 @@ export class CombatView {
     const uid = this.dragUid;
     const c = this.cardByUid(uid);
     const el = this.cardEls.get(uid);
+    const d = this.drag;
     this.dragUid = null;
+    this.drag = null;
     this.showPlayZone(null);
     el?.classList.remove('dragging', 'will-play');
     const target = this.aimTarget;
@@ -515,14 +556,11 @@ export class CombatView {
     this.highlightTarget(null);
     this.inspected = null;
     if (!c || cancelled) { this.refresh(); return; }
-    const playNow = (t) => {
-      this.releasedUid = uid; // play animation starts where the card was dropped
-      this.play(uid, t);
-    };
+    const drop = { x: d.x, y: d.y, cw: d.cw, ch: d.ch };
     if (this.g.needsTarget(c) && this.g.aliveEnemies().length > 0) {
-      if (target) playNow(target);
+      if (target) this.play(uid, target, { drop });
       else this.refresh();
-    } else if (y >= 0 && y < this.playLine()) playNow(null);
+    } else if (y >= 0 && y < d.playLine) this.play(uid, null, { drop });
     else this.refresh();
   }
 
@@ -586,7 +624,7 @@ export class CombatView {
   }
 
   handleKey(e) {
-    if (this.app.modalOpen() || !this.canInteract()) return;
+    if (this.app.modalOpen() || !this.canInteract() || this.ptr || this.dragUid) return;
     if (e.target.closest?.('input, textarea')) return;
     const k = e.key;
     if (/^[0-9]$/.test(k)) {
@@ -617,7 +655,8 @@ export class CombatView {
 
   // ------------------------------------------------------------- actions ---
 
-  async play(uid, targetRef) {
+  /** drop: where a dragged card was released, so its play animation starts there. */
+  async play(uid, targetRef, { drop = null } = {}) {
     const c = this.cardByUid(uid);
     if (!c || !this.canInteract()) return;
     if (!this.g.canPlay(c)) {
@@ -639,8 +678,10 @@ export class CombatView {
     this.app.tips.hide();
     this.tipShown = false;
     this.currentPlay = c;
+    this.playDrop = drop ? { uid, ...drop } : null;
     this.g.playCard(uid, targetRef);
     await this.process();
+    this.playDrop = null;
     while (this.g.pending) {
       const picked = await this.app.chooseCards(this.g.pending);
       this.g.resolveChoice(picked);
@@ -783,15 +824,17 @@ export class CombatView {
         if (el) {
           el.classList.add('leaving');
           el.style.zIndex = 200;
-          if (this.releasedUid === ev.uid) {
+          const drop = this.playDrop?.uid === ev.uid ? this.playDrop : null;
+          if (drop) {
             // Dropped by hand: the card flares and dissolves right where it was released.
-            el.classList.add('cast');
-            el.style.transform = el.style.transform.replace(/rotate\([^)]*\)/, 'rotate(0deg)').replace(/scale\([^)]*\)/, 'scale(1)');
+            const still = prefersReducedMotion();
+            if (!still) el.classList.add('cast');
+            el.style.transform = this.heldTransform(drop.x, drop.y, 1, 0, drop);
             setTimeout(() => {
-              el.style.transform = el.style.transform.replace(/scale\([^)]*\)/, 'scale(.55)') + ' translateY(-30px)';
+              el.style.transform = this.heldTransform(drop.x, drop.y - (still ? 0 : 30), still ? 1 : 0.55, 0, drop);
               el.style.opacity = '0';
               setTimeout(() => { el.remove(); }, 350);
-            }, this.d(140));
+            }, this.d(still ? 0 : 140));
           } else {
             // Played by keyboard or tap: the card rises to the middle of the field first.
             const cw = this.cardWidth();
@@ -805,7 +848,6 @@ export class CombatView {
           }
           this.cardEls.delete(ev.uid);
         }
-        this.releasedUid = null;
         this.layoutHand();
         await wait(this.d(200));
         if (ev.times > 1) this.pop('P', 'Echo!', 'buff');
