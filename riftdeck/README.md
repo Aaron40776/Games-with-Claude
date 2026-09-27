@@ -7,9 +7,8 @@ is to break the Heart of the Rift at the bottom.
 The game runs in the browser (desktop and phone) as a single HTML file. It is built with
 three.js and plain JavaScript modules. There is no framework.
 
-**Play:** [Riftdeck on claude.ai](https://claude.ai/artifact/JByP8uCiXy2TaZ3mK9VHrM). It is
-private until you share it from the page's Share menu. Alternatively, open `dist/index.html`
-after `npm run build`.
+**Play:** <https://aaron40776.github.io/Games-with-Claude/riftdeck/> (GitHub Pages, rebuilt on every
+push to `main`). Locally: `npm install && npm run build`, then open `dist/index.html`.
 
 ## Playing
 
