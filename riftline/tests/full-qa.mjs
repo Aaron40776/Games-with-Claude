@@ -319,6 +319,9 @@ for (const profName of ['desktop', 'phone']) await section(`run-${profName}`, as
   // tutorial on the first ever run
   await P.tap('#playBtn'); await P.page.waitForTimeout(900);
   check(L, 'first run shows the tutorial coach', await P.ev(() => !!window.__riftTest.game.tut) && await P.vis('coach'));
+  // 2.3.4: the coach speaks the player's input (keys on PC, dragging on touch)
+  const coach = await P.ev(() => document.getElementById('coachText').textContent);
+  check(L, `tutorial explains the ${P.prof.touch ? 'touch' : 'keyboard'} controls`, P.prof.touch ? /^Drag /.test(coach) : /W A S D/.test(coach), coach);
   await P.ev(() => { const g = window.__riftTest.game; if (g.tut) g.tut.step = 4; });
   // restart from pause
   const w0 = await P.ev(() => (window.__riftTest.game.world.__qa = 1));
@@ -441,11 +444,19 @@ for (const [name, vp, touch] of [['pc', { width: 1920, height: 955 }, false], ['
   const badRows = rows.filter(r => !r.ok).map(r => r.n);
   check(L, `settings: all ${rows.length} switches/sliders beside their label, right-aligned`, !badRows.length, badRows.join(', '));
   // menu pages: no row stretched across a huge screen (readability)
-  for (const pg of ['workshop', 'records']) {
+  for (const [pg, sel] of [['workshop', '.row'], ['records', '.row'], ['settings', '.set-row']]) {
     await P.ev(pg => { window.__riftTest.ui.show(pg); }, pg); await P.page.waitForTimeout(700);
-    const wmax = await P.ev(pg => Math.max(...[...document.querySelectorAll(`#${pg} .row`)].map(r => r.getBoundingClientRect().width)), pg);
+    const wmax = await P.ev(([pg, sel]) => Math.max(...[...document.querySelectorAll(`#${pg} ${sel}`)].map(r => r.getBoundingClientRect().width)), [pg, sel]);
     check(L, `${pg}: list rows at most 900 px wide`, wmax <= 900, `widest row ${Math.round(wmax)} px`);
   }
+  // 2.3.4: the settings header lines up with its list (2.3.3 had a 760 px header over a 1240 px list)
+  await P.ev(() => window.__riftTest.ui.show('settings')); await P.page.waitForTimeout(500);
+  const sx = await P.ev(() => { const h = document.querySelector('#settings > .topbar').getBoundingClientRect(), b = document.querySelector('#settings > .scroll').getBoundingClientRect(); return { head: Math.round(h.left), list: Math.round(b.left) }; });
+  check(L, 'settings: header and list share the left edge', Math.abs(sx.head - sx.list) <= 2, JSON.stringify(sx));
+  // 2.3.4: record tiles in one row show their numbers on one line, even when a label wraps
+  await P.ev(() => { const T = window.__riftTest; T.store.data.stats.runs = 12; T.ui.show('records'); }); await P.page.waitForTimeout(500);
+  const tiles = await P.ev(() => { const v = [...document.querySelectorAll('#statGrid .cell .v')].map(e => e.getBoundingClientRect()); const top = Math.min(...v.map(r => r.top)); const row = v.filter(r => r.top < top + 40); return { n: row.length, spread: Math.round(Math.max(...row.map(r => r.bottom)) - Math.min(...row.map(r => r.bottom))) }; });
+  check(L, 'records: numbers of the first tile row are aligned', tiles.spread <= 2, JSON.stringify(tiles));
   await P.ev(() => window.__riftTest.ui.show('home'));
   // hints: hidden behind the pause menu; below the boss bar in a boss fight
   await P.ev(() => window.__riftTest.game.startRun({})); await P.page.waitForTimeout(800);

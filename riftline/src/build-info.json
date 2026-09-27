@@ -41,12 +41,17 @@
     "19 biome music themes",
     "run history in Records",
     "first-encounter enemy hints",
-    "live run monitor + post-run audit"
+    "live run monitor + post-run audit",
+    "tutorial and tips follow the input in use (keyboard/mouse or touch)"
   ],
   "build": "__RL_BUILD__",
   "reviewed_from": "Riftline v2.3.0",
-  "generatedAt": "2026-09-26T19:00:00+02:00",
+  "generatedAt": "2026-09-27T12:30:00+02:00",
   "changes": [
+    "2.3.4: tutorial and tips explain keyboard/mouse controls on PC (W A S D, left mouse button, Space, E); they only described touch dragging, which does nothing with a mouse",
+    "2.3.4: settings on desktop windows ≥ 1100 px are a 760 px column again (2.3.3 stretched them to 1240 px under a 760 px header); header lines up with the list on every device",
+    "2.3.4: record tiles keep their numbers on one line when a label wraps; Rift Battery/Reactor Core texts say the charge is per level",
+    "2.3.4: project setup — readable src/game.js, esbuild build, version only in package.json, QA scripts as npm scripts, GitHub Pages deployment",
     "2.3.3: biome grid colours re-spread (Tempest/Aurora looked like Neon Yard, Catacombs like Requiem) — deep test requires ΔE ≥ 30 between any two biomes",
     "2.3.3: upgrade cards on desktop/tablet are real vertical cards in one row (3 or 4); they were phone rows stretched to 560 px tall columns",
     "2.3.3: desktop menu pages centred with two-column workshop/records lists; narrower pause menu; switches stay beside their label",

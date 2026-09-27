@@ -1,3 +1,73 @@
+RIFTLINE v2.3.4 – CHECKUP · PC-STEUERUNG ERKLÄRT · EINSTELLUNGEN · GITHUB-PROJEKT
+Basis: v2.3.3 · Build r234a0927h-r1 · 27.09.2026
+
+Auftrag: Checkup von 2.3.3, danach Riftline als GitHub-Projekt nach dem Vorbild von Riftdeck.
+
+1) Checkup: mitgelieferte Tests auf 2.3.3
+   deep test ok · world-audit 240 Wellen, 0 Befunde · data-audit ok · e2e 5 Profile, 0 Fehler ·
+   run-audit Bot-Run bis Welle 22 inkl. Endlos ok.
+   full-qa: zufällig 2 FAIL in run-desktop („wave 10 is a boss wave“, 2 von 3 Läufen). Kein
+   Spielfehler: neu gezogene Upgrade-Karten sind 650 ms gesperrt (Schutz vor Fehlklicks), der Test
+   klickte ~350 ms nach dem Reroll. Der Test wartet jetzt auf das Ende der Sperre.
+   Zusätzlich: 45-Wellen-Bot-Run mit Messung von Geometrien, Texturen und Szenenobjekten pro Welle:
+   kein Speicherleck (Geometrien schwanken zwischen 100 und 144, ohne Zunahme).
+
+2) Gefunden und behoben
+   - PC-Steuerung wurde nirgends erklärt. Tutorial und Tipps kannten nur Touch („Drag anywhere
+     on the left side to move“). Mit der Maus bewegt Ziehen aber nicht: bewegt wird mit W A S D
+     oder Pfeiltasten, gezielt mit gedrückter linker Maustaste, Dash mit Leertaste, Nova mit E.
+     Jetzt folgt jeder Text dem Eingabegerät, das gerade benutzt wird (Start: Zeigertyp des Geräts,
+     danach die letzte echte Eingabe). Betrifft Tutorial-Schritte 1–3 und die Tipps Dash, Zielen, Nova.
+   - Einstellungen am PC (Fenster ab 1100 px) seit 2.3.3 auf 1240 px gestreckt: Schalter bis
+     1200 px vom Text entfernt, Kopfzeile (760 px) nach rechts versetzt. Ursache: die neue
+     Breitenregel für Menüseiten traf auch die Einstellungen; die Prüfung „Listenzeilen höchstens
+     900 px“ lief nur für Werkstatt und Rekorde. Außerdem stand die Kopfzeile auf Tablet und Handy
+     quer über der ganzen Breite, die Liste aber zentriert mit 640 px. Jetzt 760 px (PC) bzw.
+     640 px, Kopfzeile auf allen Geräten bündig mit der Liste.
+   - Rekorde: Kacheln mit zweizeiliger Beschriftung („Enemies destroyed“) zeigten ihre Zahl 10 px
+     tiefer als die Nachbarn. Die Zahl steht jetzt in jeder Kachel unten.
+   - Werkstatt: Rift Battery und Reactor Core wirken pro Stufe (+10 % bzw. +5 % Nova-Ladung),
+     der Text klang nach einem festen Bonus.
+   Neue Prüfungen in tests/full-qa.mjs (Gegenprobe gegen 2.3.3: 6 FAIL):
+     run-*     das Tutorial erklärt die Steuerung des Geräts (PC „W A S D“, Handy „Drag …“)
+     layout-*  Einstellungszeilen höchstens 900 px · Kopfzeile und Liste bündig ·
+               Zahlen der ersten Rekord-Kachelreihe auf einer Linie
+
+3) GitHub-Projekt (Ordner riftline/ im Repo Games-with-Claude)
+   - src/game.js ist das Bundle aus 2.3.3, mit Prettier formatiert (rund 39 000 Zeilen, Kommentare
+     bleiben). build.js minifiziert es mit esbuild nach dist/. Der neu gebaute Stand von 2.3.3
+     bestand dieselben Tests wie das Original (deep test, full-qa 189 Prüfungen, world-, data-,
+     run-audit), bevor die Fehler oben behoben wurden.
+   - Version und Build stehen nur noch in package.json. build.js setzt sie überall ein (HTML, JS,
+     Service Worker, build-info.json, _headers) und bricht ab, wenn der Service Worker eine
+     fehlende Datei vorladen würde.
+   - Die QA-Skripte laufen als npm-Skripte (npm test, qa, e2e, audit, sim, screens);
+     tools/qa.js startet dafür selbst einen Server. deep-test, world-audit, data-audit und
+     run-audit melden Fehler jetzt auch über den Exit-Code (vorher immer „erfolgreich“).
+   - GitHub Pages: der Workflow testet (npm test) und baut Riftline und veröffentlicht es unter
+     /riftline/. Die Startseite ist jetzt eine Spielauswahl statt einer Weiterleitung zu Riftdeck.
+
+Offen (nicht geändert):
+   - Firefox und Safari weiterhin nur von Hand: der Firefox-Download ist in dieser Umgebung
+     gesperrt (HTTP 403).
+   - Doppelte Wirkung im Workshop (Design-Entscheidung): Field Supply = Route Scanner (bekannt seit
+     2.3.2), Power Core = Arsenal Lab (+5 % Schaden pro Stufe), Hull Plating ≈ Armor Core
+     (+10 bzw. +8 max. HP pro Stufe).
+
+Ergebnisse 2.3.4 (headless Chromium, Software-WebGL):
+  full-qa.mjs   200 Prüfungen, 0 Fehler (files, saves, workshop, ui ×2, run ×2, visual, layout ×3, buttons)
+  e2e.mjs       5 Geräteprofile, 0 Fehler
+  Deep test     ok · world-audit 240 Wellen, 0 Befunde · data-audit ok
+  run-audit     Bot-Run bis Welle 22 inkl. Endlos, alle Checks OK (input WARN ist erwartet)
+  GitHub Pages  Seite wie im Workflow zusammengebaut und unter /Games-with-Claude/ ausgeliefert:
+                Spielauswahl · Riftline startet im Unterpfad · Service Worker mit Scope riftline/ ·
+                15 Dateien im Offline-Cache · Neuladen ohne Netz startet das Spiel · keine
+                FAIL-Healthchecks · Riftdeck daneben erreichbar · keine fehlgeschlagenen Requests
+  screens.mjs   PC und Handy quer angesehen (Einstellungen, Rekorde, Tutorial)
+  Nicht geprüft: der GitHub-Actions-Lauf selbst (startet erst nach dem Merge nach main).
+
+================================================================================
+
 RIFTLINE v2.3.3 – BIOM-FARBEN · UPGRADE-KARTEN AM PC · LAYOUT-KRITERIEN
 Basis: v2.3.2 · Build r233a0926g-r1 · 26.09.2026
 

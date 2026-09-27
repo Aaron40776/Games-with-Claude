@@ -1196,6 +1196,16 @@ button:focus-visible, input:focus-visible { position: relative; z-index: 2; }
   body.device-phone.is-landscape #hud .act-btn { width: clamp(50px, 16vh, 58px); height: clamp(50px, 16vh, 58px); }
   body.device-phone.is-landscape #hud .act-btn.nova { width: clamp(44px, 14vh, 50px); height: clamp(44px, 14vh, 50px); }
 }
+/* 2.3.4: the 2.3.3 wide-page rule (".screen.page > .scroll" up to 1240 px) also caught the
+   settings list, so on desktop windows ≥ 1100 px its rows were 1240 px wide (switch 1200 px
+   from its label) under a 760 px header. On tablets and landscape phones the header spanned the
+   whole screen above the centred 640 px list. Settings keep their column (640 px, 760 px on
+   desktop) and the header follows it on every device. */
+#settings > .topbar { width: 100%; max-width: 640px; align-self: center; }
+body.device-desktop #settings > .topbar, body.device-desktop #settings > .settings-body { max-width: 760px; }
+/* 2.3.4: record tiles whose label wraps ("Enemies destroyed") pushed their number down, so the
+   numbers of one row sat at different heights. The number now sits at the bottom of every tile. */
+.stat-grid .cell { display: flex; flex-direction: column; justify-content: space-between; }
 </style>
 
 <script>

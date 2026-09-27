@@ -20,6 +20,9 @@
       uiGuardDrops: 0,
     };
   var RL_TOUCH_CLICK_GUARD = { until: 0, x: 0, y: 0, key: "" };
+  // 2.3.4: the input the player is using right now, so hints can say "W A S D" or "drag".
+  // Starts from the primary pointer (coarse = touch screen) and follows the last real input.
+  var RL_INPUT = { touch: typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches };
   function rlUiClickKey(t) {
     if (!t) return "";
     if (t.id) return "id:" + t.id;
@@ -3037,6 +3040,9 @@
     mod("routeScanner").desc = "+1 supply cache per wave, richer caches (from wave 2, not in boss waves)";
     mod("nova").desc = "Every wave starts with at least 25% Nova charge per level"; // floor, not additive
     mod("droneBay").desc = "+1 Wingman slot per level (needs the Wingman upgrade)";
+    // 2.3.4: both add their charge once per level (10 / 5 per level); the text sounded like a flat bonus.
+    mod("riftBattery").desc = "Start each wave with +10% Nova charge per level";
+    mod("reactorCore").desc = "Start each wave with +5% Nova charge per level";
     // Four 2.1 biomes had no procedural obstacle shapes/templates and always used
     // their classic layout; give them their own shape language.
     const bar = (i, a, b, c, d) =>
@@ -36191,6 +36197,7 @@ varying float vFlash;`,
     }
     down(t) {
       RL_RT.pointerdown++;
+      RL_INPUT.touch = t.pointerType !== "mouse";
       if (!this.enabled) return;
       if ((t.preventDefault(), t.pointerType === "mouse")) {
         (t.button === 0 && ((this.mouse.down = !0), (this.mouse.active = !0)),
@@ -36225,7 +36232,8 @@ varying float vFlash;`,
         (Number.isFinite(t.clientX) && (this.mouse.x = t.clientX),
           Number.isFinite(t.clientY) && (this.mouse.y = t.clientY),
           (this.mouse.active = !0),
-          (this.mouse.t = performance.now()));
+          (this.mouse.t = performance.now()),
+          (RL_INPUT.touch = !1));
         return;
       }
       let n = t.getCoalescedEvents ? t.getCoalescedEvents() : null,
@@ -36274,6 +36282,7 @@ varying float vFlash;`,
       if (!n) return;
       let s = t.target && t.target.tagName;
       if (!(s === "INPUT" || s === "TEXTAREA")) {
+        e && (RL_INPUT.touch = !1);
         if (e && (n === "escape" || n === "p")) {
           !t.repeat && this.onPause && this.onPause();
           return;
@@ -38835,9 +38844,19 @@ varying float vFlash;`,
               Gn("portal", "Portals move you across the arena. Shots fly through them too."),
             Be.setMusic(t.boss ? "boss" : "fight", e.id),
             t.n === 2 &&
-              Gn("dash", "Tip: DASH \u2014 or double-tap the move side \u2014 makes you untouchable for a moment."),
+              Gn(
+                "dash",
+                rlKeys()
+                  ? "Tip: SPACE dashes \u2014 it makes you untouchable for a moment."
+                  : "Tip: DASH \u2014 or double-tap the move side \u2014 makes you untouchable for a moment.",
+              ),
             t.n === 3 &&
-              Gn("aim", `Tip: drag the ${ql().aim} side to aim yourself. Holding it fires at the nearest enemy.`));
+              Gn(
+                "aim",
+                rlKeys()
+                  ? "Tip: hold the left mouse button to aim and fire at the cursor."
+                  : `Tip: drag the ${ql().aim} side to aim yourself. Holding it fires at the nearest enemy.`,
+              ));
           break;
         }
         case "boss":
@@ -38846,7 +38865,12 @@ varying float vFlash;`,
             i.boss && oe && ((ft.intro = { t: 0 }), oe.focusOn(i.boss.x, i.boss.y), ln.reset()));
           break;
         case "novaReady":
-          Gn("nova", "NOVA is charged \u2014 tap it to blast everything around you.");
+          Gn(
+            "nova",
+            rlKeys()
+              ? "NOVA is charged \u2014 press E to blast everything around you."
+              : "NOVA is charged \u2014 tap it to blast everything around you.",
+          );
           break;
         case "cleared":
           (Ft.banner(t.boss ? "BOSS DOWN" : "CLEARED", t.flawless ? "Flawless" : `Wave ${t.n}`, "good", 1500),
@@ -38943,10 +38967,20 @@ varying float vFlash;`,
     ((Xl -= i), Xl <= 0 && ((Xl = 0.95), Be.play("heart")));
   }
   var ql = () => (ee.data.settings.swap ? { move: "right", aim: "left" } : { move: "left", aim: "right" }),
+    // 2.3.4: keyboard/mouse players got the touch texts ("drag the left side"), which do nothing
+    // with a mouse, and the keys were explained nowhere. Every step now has both wordings and
+    // follows the input in use (the coach re-reads the text every frame).
+    rlKeys = () => !RL_INPUT.touch,
     mp = [
-      () => `Drag anywhere on the ${ql().move} side to move.`,
-      () => `Enemies! Your drone fires on its own \u2014 drag the ${ql().aim} side to aim yourself.`,
-      () => `Tap DASH (or double-tap the ${ql().move} side) to dodge through danger.`,
+      () => (rlKeys() ? "Move with W A S D or the arrow keys." : `Drag anywhere on the ${ql().move} side to move.`),
+      () =>
+        rlKeys()
+          ? "Enemies! Your drone fires on its own \u2014 hold the left mouse button to aim yourself."
+          : `Enemies! Your drone fires on its own \u2014 drag the ${ql().aim} side to aim yourself.`,
+      () =>
+        rlKeys()
+          ? "Press SPACE to dash through danger."
+          : `Tap DASH (or double-tap the ${ql().move} side) to dodge through danger.`,
       () => "Grab the shards \u2014 they buy permanent upgrades in the Workshop.",
     ];
   function l_(i, t) {
