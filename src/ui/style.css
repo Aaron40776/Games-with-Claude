@@ -184,7 +184,9 @@ p { margin: 0; }
 .card.lifted:not(.playable) { filter: drop-shadow(0 0.8em 1.4em rgba(0, 0, 0, 0.65)) brightness(0.85); }
 .card.selected { filter: drop-shadow(0 0 0.35em #fff) drop-shadow(0 0 1em var(--tc)); }
 /* A held card keeps its dimmed look when it can't be played; the play zone explains why. */
-.card.in-hand.dragging { transition: transform 0.05s linear; z-index: 300 !important; cursor: grabbing; filter: drop-shadow(0 1em 1.6em rgba(0, 0, 0, 0.6)); }
+/* No transform transition while held: the card is placed from JS on every move, and a
+   transition would restart each time and trail far behind the pointer. Easing is done in dragFrame(). */
+.card.in-hand.dragging { transition: opacity 0.25s, filter 0.2s; z-index: 300 !important; cursor: grabbing; filter: drop-shadow(0 1em 1.6em rgba(0, 0, 0, 0.6)); }
 .card.in-hand.dragging:not(.playable) { filter: brightness(0.68) saturate(0.65) drop-shadow(0 1em 1.6em rgba(0, 0, 0, 0.6)); }
 .card.in-hand.dragging.will-play { filter: drop-shadow(0 0 0.5em #fff) drop-shadow(0 0 1.3em var(--tc)); }
 .card.cast { filter: brightness(1.8) drop-shadow(0 0 1.4em var(--tc)); }

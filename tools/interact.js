@@ -65,6 +65,9 @@ const idle = (page) => page.waitForFunction(() => !window.__riftdeck.combat?.bus
   await page.waitForTimeout(150);
   const aiming = await page.evaluate(() => window.__riftdeck.combat.aimTarget);
   check(!!aiming, 'desktop: dragging an attack shows a target under the pointer');
+  // A transform transition on the held card restarts on every move and makes it trail the pointer.
+  const lagging = await page.evaluate(() => document.querySelector('.card.dragging')?.getAnimations().some((a) => a.transitionProperty === 'transform'));
+  check(lagging === false, 'desktop: the held card has no transform transition, so it does not lag behind the pointer');
   // Software rendering can drop to ~2 fps here, so give the held card time to settle.
   let held = null;
   for (let i = 0; i < 40; i++) {

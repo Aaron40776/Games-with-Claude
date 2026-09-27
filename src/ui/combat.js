@@ -455,10 +455,22 @@ export class CombatView {
     this.dragUid = uid;
     // Measured once per drag: reading computed styles every frame forces style recalcs.
     const cw = this.cardWidth();
+    const ch = cw * 1.4;
+    const still = !!prefersReducedMotion();
     this.drag = {
-      cw, ch: cw * 1.4, playLine: this.playLine(), playable: this.g.canPlay(c),
-      x: 0, y: 0, scale: 1.08, tilt: 0, lastX: null, lastT: 0, still: !!prefersReducedMotion(),
+      cw, ch, playLine: this.playLine(), playable: this.g.canPlay(c),
+      x: 0, y: 0, scale: 1.08, scaleGoal: 1.08, tilt: 0, offX: 0, offY: 0, from: null,
+      lastX: null, lastT: 0, still,
     };
+    if (!still) {
+      // Start from where the card is shown right now (read before 'dragging' cancels a
+      // running hand transition), so picking it up glides instead of jumping.
+      const m = new DOMMatrix(getComputedStyle(el).transform);
+      const reach = -0.68 * ch; // bottom centre -> grip point, see heldTransform()
+      this.drag.from = { x: cw / 2 + m.e + m.c * reach, y: ch + m.f + m.d * reach };
+      this.drag.scale = Math.hypot(m.a, m.b) || 1.08;
+      this.drag.tilt = (Math.atan2(m.b, m.a) * 180) / Math.PI;
+    }
     this.selected = null;
     this.inspected = uid;
     this.hideHint();
@@ -499,9 +511,17 @@ export class CombatView {
     }
     el.classList.toggle('will-play', armed);
     this.showPlayZone({ armed, label, line: d.playLine });
+    if (d.from) {
+      // First move: the gap between the card and the pointer closes in dragFrame().
+      d.offX = d.from.x - x;
+      d.offY = d.from.y - y;
+      d.from = null;
+    }
     d.x = x;
     d.y = y;
-    d.scale = scale;
+    // The position follows the pointer 1:1; only the size change is eased (in dragFrame).
+    d.scaleGoal = scale;
+    if (d.still) d.scale = scale;
     this.applyDragTransform();
   }
 
@@ -518,17 +538,21 @@ export class CombatView {
     const a = (tiltDeg * Math.PI) / 180;
     const tx = x - cw / 2 - reach * Math.sin(a);
     const ty = y - ch + reach * Math.cos(a);
-    return `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) rotate(${tiltDeg.toFixed(2)}deg) scale(${scale})`;
+    return `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) rotate(${tiltDeg.toFixed(2)}deg) scale(${scale.toFixed(3)})`;
   }
 
   applyDragTransform() {
     const el = this.dragUid && this.cardEls.get(this.dragUid);
     const d = this.drag;
     if (!el || !d) return;
-    el.style.transform = this.heldTransform(d.x, d.y, d.scale, d.tilt);
+    el.style.transform = this.heldTransform(d.x + d.offX, d.y + d.offY, d.scale, d.tilt);
   }
 
-  /** Every frame while dragging: tilt follows horizontal speed and settles at rest, independent of frame rate. */
+  /**
+   * Every frame while dragging, independent of frame rate: tilt follows horizontal
+   * speed, the size eases towards its goal and the pick-up gap closes. None of this
+   * delays the position, which always moves with the pointer.
+   */
   dragFrame() {
     const d = this.dragUid && this.drag;
     if (!d || d.still) return;
@@ -538,11 +562,17 @@ export class CombatView {
     const speed = (d.x - d.lastX) / dt; // px per second
     d.lastX = d.x;
     d.lastT = now;
-    const goal = clamp(speed * 0.012, -9, 9);
-    let tilt = goal + (d.tilt - goal) * Math.exp(-dt * 12);
-    if (Math.abs(tilt) < 0.1) tilt = 0;
-    if (tilt !== d.tilt) {
-      d.tilt = tilt;
+    // Exponential approach that lands exactly on the goal once it is close.
+    const ease = (v, goal, rate, eps) => {
+      const n = goal + (v - goal) * Math.exp(-dt * rate);
+      return Math.abs(n - goal) < eps ? goal : n;
+    };
+    const tilt = ease(d.tilt, clamp(speed * 0.012, -9, 9), 12, 0.1);
+    const scale = ease(d.scale, d.scaleGoal, 18, 0.002);
+    const offX = ease(d.offX, 0, 18, 0.5);
+    const offY = ease(d.offY, 0, 18, 0.5);
+    if (tilt !== d.tilt || scale !== d.scale || offX !== d.offX || offY !== d.offY) {
+      Object.assign(d, { tilt, scale, offX, offY });
       this.applyDragTransform();
     }
   }
@@ -561,7 +591,7 @@ export class CombatView {
     this.highlightTarget(null);
     this.inspected = null;
     if (!c || cancelled) { this.refresh(); return; }
-    const drop = { x: d.x, y: d.y, cw: d.cw, ch: d.ch };
+    const drop = { x: d.x + d.offX, y: d.y + d.offY, cw: d.cw, ch: d.ch };
     if (this.g.needsTarget(c) && this.g.aliveEnemies().length > 0) {
       if (target) this.play(uid, target, { drop });
       else this.refresh();
