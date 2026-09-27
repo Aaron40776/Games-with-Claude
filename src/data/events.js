@@ -53,7 +53,7 @@ export const EVENTS = {
     name: 'Drifting Courier', acts: [1, 2],
     text: 'A courier drone tumbles through the void, its cargo net stuffed with Cells. It chirps a price at you.',
     options: [
-      { label: 'Buy', detail: 'Pay 45 Shards. Gain 2 random Cells.', req: (run) => run.shards >= 45 && run.cells.includes(null), reqText: 'Requires 45 Shards and a free Cell slot.', effects: [{ shards: -45 }, { cells: 2 }], result: 'The drone chirps happily and floats away.' },
+      { label: 'Buy', detail: 'Pay 45 Shards. Gain 2 random Cells.', req: (run) => run.shards >= 45 && run.cells.filter((c) => c === null).length >= 2, reqText: 'Requires 45 Shards and 2 free Cell slots.', effects: [{ shards: -45 }, { cells: 2 }], result: 'The drone chirps happily and floats away.' },
       { label: 'Rob', detail: 'Gain 70 Shards. Become cursed: Rift Scar.', effects: [{ shards: 70 }, { curse: 'rift_scar' }], result: 'You crack the drone open. Its dying pulse leaves a scar.' },
       leave,
     ],
@@ -130,7 +130,7 @@ export const EVENTS = {
     text: 'A masked figure shuffles shards between three cups. "Double or nothing, runner?"',
     options: [
       {
-        label: 'Bet 50 Shards', detail: '50%: Gain 125 Shards. 50%: Lose them.',
+        label: 'Bet 50 Shards', detail: '50%: Win 75 Shards. 50%: Lose your 50 Shards.',
         req: (run) => run.shards >= 50, reqText: 'Requires 50 Shards.',
         roll: [
           { w: 50, effects: [{ shards: 75 }], result: 'The cup lifts. Shards everywhere. The figure bows.' },
