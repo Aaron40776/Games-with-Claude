@@ -45,6 +45,7 @@ export class CombatView {
     this.arrowSvg.classList.add('aim');
     this.arrowSvg.innerHTML = '<defs><marker id="aimhead" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs><path class="aim-path" marker-end="url(#aimhead)"/>';
     this.arrowSvg.style.display = 'none';
+    this.playZone = h('div.play-zone', { hidden: true }, h('span'));
 
     this.energyEl = h('div.energy', { tip: () => `<b>Energy</b><p>Spent to play cards. You have ${this.g.energy} of ${this.g.maxEnergy()} this turn.</p>` });
     this.drawBtn = h('button.pile.draw-pile', { type: 'button', 'aria-label': 'Draw pile', onclick: () => this.showPile('draw') });
@@ -54,7 +55,7 @@ export class CombatView {
     const left = h('div.bar-left', this.energyEl, this.drawBtn);
     const right = h('div.bar-right', this.fadedBtn, this.discardBtn, this.endBtn);
 
-    root.append(this.unitsLayer, this.popLayer, this.arrowSvg, this.handEl, left, right, this.hint, this.banner);
+    root.append(this.unitsLayer, this.popLayer, this.playZone, this.arrowSvg, this.handEl, left, right, this.hint, this.banner);
     this.app.stage.appendChild(root);
 
     this.handEl.addEventListener('pointerdown', (e) => this.onPointerDown(e));
@@ -324,8 +325,9 @@ export class CombatView {
     this.aimTarget = null;
     this.kbTarget = null;
     const c = this.cardByUid(uid);
-    if (c && this.g.needsTarget(c) && this.g.aliveEnemies().length > 1) this.showHint('Tap an enemy to target');
-    else if (c) this.showHint(matchMedia('(pointer: coarse)').matches ? 'Tap again or drag up to play' : 'Click again or drag up to play');
+    const targeted = c && this.g.needsTarget(c) && this.g.aliveEnemies().length > 1;
+    if (c && this.tapMode()) this.showHint(targeted ? 'Tap an enemy to target' : 'Tap again or swipe up to play');
+    else if (c) this.showHint(targeted ? 'Swipe the card onto an enemy' : 'Swipe the card up to play');
     this.refresh();
   }
 
@@ -418,12 +420,9 @@ export class CombatView {
     const uid = p.mode === 'scrub' ? this.inspected : p.uid;
     if (!uid) return;
     if (p.mode === 'press' && p.wasSelected) {
-      this.tryPlaySelected();
-      return;
-    }
-    if (p.type === 'mouse' && p.mode === 'press') {
-      // Desktop click: select immediately; a second click plays.
-      this.select(uid);
+      // Second tap: plays only in the optional tap mode, otherwise puts the card back.
+      if (this.tapMode()) this.tryPlaySelected();
+      else this.deselect();
       return;
     }
     this.select(uid);
@@ -457,23 +456,27 @@ export class CombatView {
     const ch = cw * 1.4;
     const W = window.innerWidth;
     const H = window.innerHeight;
-    const targeted = this.g.needsTarget(c) && this.g.aliveEnemies().length > 0;
+    const alive = this.g.aliveEnemies();
+    const targeted = this.g.needsTarget(c) && alive.length > 0;
+    const inZone = y < this.playLine();
     if (targeted) {
       // Card parks above the hand, an arrow follows the pointer.
       const cx = W / 2;
       const top = H - safeBottom() - ch * 1.15 - 20;
       el.style.transform = `translate(${cx - cw / 2}px, ${top}px) scale(1.05)`;
-      const target = this.targetAt(x, y);
+      // With a single enemy, anywhere in the field counts as aiming at it.
+      const target = this.targetAt(x, y) || (alive.length === 1 && inZone ? alive[0].ref : null);
       if (target !== this.aimTarget) {
         this.aimTarget = target;
         this.highlightTarget(target);
         fillCard(el, c.id, c.up, { g: this.g, inst: c, target: target ? this.g.enemyByRef(target) : null, cost: this.g.costOf(c) });
       }
       this.drawArrow(cx, top + 8, x, y, !!target);
+      this.showPlayZone({ armed: !!target, label: target ? 'Release to attack' : alive.length === 1 ? 'Drag into the field' : 'Drag onto an enemy' });
     } else {
       el.style.transform = `translate(${x - cw / 2}px, ${y - ch * 0.55}px) scale(1.1)`;
-      const playLine = H - safeBottom() - ch * 1.1;
-      el.classList.toggle('will-play', y < playLine);
+      el.classList.toggle('will-play', inZone);
+      this.showPlayZone({ armed: inZone, label: inZone ? 'Release to play' : 'Drag into the field' });
     }
   }
 
@@ -483,18 +486,17 @@ export class CombatView {
     const el = this.cardEls.get(uid);
     this.dragUid = null;
     this.arrowSvg.style.display = 'none';
+    this.showPlayZone(null);
     el?.classList.remove('dragging', 'will-play');
     const target = this.aimTarget;
     this.aimTarget = null;
     this.highlightTarget(null);
     this.inspected = null;
     if (!c || cancelled) { this.refresh(); return; }
-    const H = window.innerHeight;
-    const ch = this.cardWidth() * 1.4;
     if (this.g.needsTarget(c) && this.g.aliveEnemies().length > 0) {
       if (target) this.play(uid, target);
       else this.refresh();
-    } else if (y < H - safeBottom() - ch * 1.1) this.play(uid, null);
+    } else if (y >= 0 && y < this.playLine()) this.play(uid, null);
     else this.refresh();
   }
 
@@ -532,9 +534,24 @@ export class CombatView {
       this.useCell(slot, ref);
       return;
     }
-    if (!this.selected) return;
+    if (!this.selected || !this.tapMode()) return;
     const c = this.cardByUid(this.selected);
     if (c && this.g.needsTarget(c)) this.play(c.uid, ref);
+  }
+
+  /** Optional setting: tapping a selected card (or an enemy) plays it. Default is swipe only. */
+  tapMode() { return this.app.settings.cardPlay === 'tap'; }
+
+  /** Cards dragged above this line get played. */
+  playLine() { return window.innerHeight - safeBottom() - this.cardWidth() * 1.4 * 1.3; }
+
+  showPlayZone(state) {
+    const z = this.playZone;
+    if (!state) { z.hidden = true; return; }
+    z.hidden = false;
+    z.style.height = `${Math.max(0, this.playLine())}px`;
+    z.classList.toggle('armed', state.armed);
+    z.querySelector('span').textContent = state.label;
   }
 
   tryPlaySelected(targetRef = null) {

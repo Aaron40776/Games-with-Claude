@@ -25,7 +25,7 @@ export function loadRun() {
 export function saveRun(run) { write(KEYS.run, run ? serializeRun(run) : null); }
 export function clearRun() { write(KEYS.run, null); }
 
-const DEFAULT_SETTINGS = { sound: true, music: true, speed: 'normal', quality: 'high' };
+const DEFAULT_SETTINGS = { sound: true, music: true, speed: 'normal', quality: 'high', cardPlay: 'swipe' };
 
 export function loadSettings() {
   try {
