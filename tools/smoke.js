@@ -6,8 +6,9 @@
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const ROOT = path.dirname(new URL(import.meta.url).pathname) + '/..';
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const OUT = path.join(ROOT, 'shots');
 fs.mkdirSync(OUT, { recursive: true });
 const arg = (k, d) => (process.argv.find((a) => a.startsWith(`--${k}=`)) || '').split('=')[1] || d;
@@ -29,7 +30,7 @@ for (const [name, opts] of Object.entries(VIEWPORTS)) {
   const page = await ctx.newPage();
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`[${name}] ${m.text()}`); });
   page.on('pageerror', (e) => errors.push(`[${name}] ${e.message}`));
-  await page.goto('file://' + path.join(ROOT, 'dist/index.html'));
+  await page.goto(pathToFileURL(path.join(ROOT, 'dist/index.html')).href);
   await page.waitForTimeout(1500);
   const shot = (n) => page.screenshot({ path: path.join(OUT, `${name}-${n}.png`) });
   await shot('01-title');

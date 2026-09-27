@@ -4,8 +4,9 @@
 
 import { chromium } from 'playwright';
 import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const ROOT = path.dirname(new URL(import.meta.url).pathname) + '/..';
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 let failed = false;
 const check = (cond, msg) => { console.log(`${cond ? 'ok  ' : 'FAIL'} ${msg}`); if (!cond) failed = true; };
@@ -14,7 +15,7 @@ async function setup(opts) {
   const ctx = await browser.newContext(opts);
   const page = await ctx.newPage();
   page.on('pageerror', (e) => { console.log('pageerror', e.message); failed = true; });
-  await page.goto('file://' + path.join(ROOT, 'dist/index.html'));
+  await page.goto(pathToFileURL(path.join(ROOT, 'dist/index.html')).href);
   await page.waitForTimeout(600);
   await page.evaluate(() => {
     const app = window.__riftdeck;

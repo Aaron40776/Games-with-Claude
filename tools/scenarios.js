@@ -4,9 +4,10 @@
 
 import { chromium } from 'playwright';
 import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const ROOT = path.dirname(new URL(import.meta.url).pathname) + '/..';
-const URL_ = 'file://' + path.join(ROOT, 'dist/index.html');
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
+const URL_ = pathToFileURL(path.join(ROOT, 'dist/index.html')).href;
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 const ctx = await browser.newContext({ viewport: { width: 1100, height: 760 } });
 const page = await ctx.newPage();

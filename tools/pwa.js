@@ -7,9 +7,10 @@ import { chromium } from 'playwright';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { serve } from './serve.js';
 
-const ROOT = path.dirname(new URL(import.meta.url).pathname) + '/..';
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 let failed = false;
 const check = (cond, msg) => { console.log(`${cond ? 'ok  ' : 'FAIL'} ${msg}`); if (!cond) failed = true; };
 
