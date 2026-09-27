@@ -21,7 +21,7 @@ export const BASE_ENERGY = 3;
 export const BASE_DRAW = 5;
 export const MAX_ENEMIES = 5;
 
-const freshTurnInfo = () => ({ cards: 0, attacks: 0, skills: 0, echoUsed: 0 });
+const freshTurnInfo = () => ({ cards: 0, attacks: 0, skills: 0 });
 
 function makeUnit(props) {
   return { shield: 0, statuses: {}, fresh: new Set(), alive: true, vars: {}, ...props };
@@ -69,14 +69,16 @@ export class Combat {
 
   start() {
     const cards = this.run.deck.map((c) => this.makeCard(c.id, c.up, c.uid));
-    this.rng.shuffle(cards);
-    const opening = cards.filter((c) => this.flag(c, 'opening'));
-    this.draw = [...cards.filter((c) => !this.flag(c, 'opening')), ...opening];
-    this.openingCount = opening.length;
+    this.draw = this.rng.shuffle(cards);
 
     this.encounter.forEach((id, index) => this.spawnEnemy(id, { index }));
     for (const e of [...this.enemies]) e.def.onCombatStart?.(this, e);
     this.callRelics('onCombatStart');
+    // Opening cards go on top last, so cards shuffled in at combat start
+    // (e.g. Static Heart's Static) can't push them out of the first draw.
+    const opening = this.draw.filter((c) => this.flag(c, 'opening'));
+    this.draw = [...this.draw.filter((c) => !this.flag(c, 'opening')), ...opening];
+    this.openingCount = opening.length;
     this.startPlayerTurn();
     return this;
   }
@@ -470,10 +472,8 @@ export class Combat {
     this.callRelics('beforePlay', card);
 
     let times = 1;
-    if (this.status(this.player, 'echo') > this.turnInfo.echoUsed) {
-      this.turnInfo.echoUsed++;
-      times++;
-    }
+    // Echo doubles only the first card(s) of the turn, counted by cards played this turn.
+    if (this.turnInfo.cards <= this.status(this.player, 'echo')) times++;
     if (def.type === 'attack' && !this.combatInfo.firstAttackDone) {
       this.combatInfo.firstAttackDone = true;
       if (this.hasRelic('mirror_core')) { times++; this.flashRelic('mirror_core'); }
@@ -562,11 +562,12 @@ export class Combat {
     this.turnInfo = freshTurnInfo();
     for (const u of [this.player, ...this.enemies]) u.vars.roundLoss = 0;
     const p = this.player;
-    if (!this.status(p, 'bulwark') && p.shield) {
+    // Turn 1 keeps Shield granted at combat start (e.g. Kinetic Plate).
+    if (this.turn > 1 && !this.status(p, 'bulwark') && p.shield) {
       p.shield = 0;
       this.events.push({ t: 'shieldReset', tgt: 'P' });
     }
-    const carry = this.hasRelic('void_battery') ? this.energy : 0;
+    const carry = this.run.relics.some((r) => RELICS[r.id].keepEnergy) ? this.energy : 0;
     this.energy = this.maxEnergy() + carry;
     this.events.push({ t: 'turn', turn: this.turn });
 

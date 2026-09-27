@@ -95,7 +95,6 @@ export function renderMap(app) {
       let cls = 'edge';
       if (onPath(n.id, nid)) cls += ' taken';
       else if (n.id === run.pos && reach.has(nid)) cls += ' open';
-      else if (!run.pos && false) cls += '';
       lines += `<line class="${cls}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`;
     }
   }
@@ -319,6 +318,8 @@ export function renderEvent(app) {
         if (it.kind === 'relic') g.appendChild(relicRow(it.id));
         else if (it.kind === 'card') g.appendChild(h('div.gain-line', h('span', `Added ${cardName(it.id, it.up)} to your deck`)));
         else if (it.kind === 'upgrade') g.appendChild(h('div.gain-line', h('span', `Upgraded ${CARDS[it.id].name}`)));
+        else if (it.kind === 'cell') g.appendChild(h('div.gain-line', { html: `<span class="ico" style="color:${CELL_COLOR[it.id]}">${icon('cell')}</span><span>Gained ${esc(CELLS[it.id].name)}</span>` }));
+        else if (it.kind === 'note') g.appendChild(h('div.gain-line', h('span', it.text)));
       }
       body.appendChild(g);
     }

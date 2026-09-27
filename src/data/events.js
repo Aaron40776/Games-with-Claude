@@ -8,6 +8,8 @@
 // `roll` picks one weighted outcome instead of fixed effects.
 // Options without `next` end the event and show `result`.
 
+import { canUpgrade } from './cards.js';
+
 const leave = { label: 'Leave', detail: 'Move on.', result: 'You leave it behind.' };
 
 export const EVENTS = {
@@ -51,7 +53,7 @@ export const EVENTS = {
     name: 'Drifting Courier', acts: [1, 2],
     text: 'A courier drone tumbles through the void, its cargo net stuffed with Cells. It chirps a price at you.',
     options: [
-      { label: 'Buy', detail: 'Pay 45 Shards. Gain 2 random Cells.', req: (run) => run.shards >= 45, reqText: 'Requires 45 Shards.', effects: [{ shards: -45 }, { cells: 2 }], result: 'The drone chirps happily and floats away.' },
+      { label: 'Buy', detail: 'Pay 45 Shards. Gain 2 random Cells.', req: (run) => run.shards >= 45 && run.cells.includes(null), reqText: 'Requires 45 Shards and a free Cell slot.', effects: [{ shards: -45 }, { cells: 2 }], result: 'The drone chirps happily and floats away.' },
       { label: 'Rob', detail: 'Gain 70 Shards. Become cursed: Rift Scar.', effects: [{ shards: 70 }, { curse: 'rift_scar' }], result: 'You crack the drone open. Its dying pulse leaves a scar.' },
       leave,
     ],
@@ -110,7 +112,7 @@ export const EVENTS = {
     text: 'A runner\'s suit drifts past, empty. The pack on its back is still sealed.',
     options: [
       { label: 'Search the pack', detail: 'Choose 1 of 3 uncommon cards.', effects: [{ cardChoice: 'uncommon', n: 3 }], result: 'Their tactics become yours.' },
-      { label: 'Take the cells', detail: 'Gain 1 random Cell.', effects: [{ cells: 1 }], result: 'You pocket what is left of their supplies.' },
+      { label: 'Take the cells', detail: 'Gain 1 random Cell.', req: (run) => run.cells.includes(null), reqText: 'Requires a free Cell slot.', effects: [{ cells: 1 }], result: 'You pocket what is left of their supplies.' },
       { label: 'Pay respects', detail: 'Heal 10 HP.', effects: [{ heal: 10 }], result: 'You take a moment. It helps.' },
     ],
   },
@@ -119,7 +121,7 @@ export const EVENTS = {
     text: 'An abandoned tuning rig. The safety limiters have been ripped out.',
     options: [
       { label: 'Overclock', detail: 'Lose 7 Max HP. Obtain a random rare card.', effects: [{ maxHp: -7 }, { randomCard: 'rare' }], result: 'The rig screams. Something powerful is burned into your deck.' },
-      { label: 'Calibrate', detail: 'Upgrade a card.', effects: [{ deck: 'upgrade', n: 1 }], result: 'Clean, precise, safe.' },
+      { label: 'Calibrate', detail: 'Upgrade a card.', req: (run) => run.deck.some((c) => canUpgrade(c.id, c.up)), reqText: 'Every card is already upgraded.', effects: [{ deck: 'upgrade', n: 1 }], result: 'Clean, precise, safe.' },
       leave,
     ],
   },

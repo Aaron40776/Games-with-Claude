@@ -23,6 +23,7 @@ export function loadRun() {
   return s ? deserializeRun(s) : null;
 }
 export function saveRun(run) { write(KEYS.run, run ? serializeRun(run) : null); }
+export function saveRawRun(json) { write(KEYS.run, json); }
 export function clearRun() { write(KEYS.run, null); }
 
 const DEFAULT_SETTINGS = { sound: true, music: true, speed: 'normal', quality: 'high', cardPlay: 'swipe' };

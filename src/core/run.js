@@ -285,7 +285,7 @@ function generateRewards(run, kind) {
   if (kind === 'elite') {
     const first = rollRelic(run, rollTier(r));
     if (first) rewards.relics.push(first);
-    if (hasRelic(run, 'void_lure')) {
+    if (run.relics.some((rel) => RELICS[rel.id].extraEliteRelic)) {
       const second = rollRelic(run, rollTier(r), rewards.relics);
       if (second) rewards.relics.push(second);
     }
@@ -412,7 +412,12 @@ export function buyItem(run, index) {
   run.shards -= item.price;
   item.sold = true;
   if (item.kind === 'card') addToDeck(run, item.id, item.up);
-  if (item.kind === 'relic') addRelic(run, item.id);
+  if (item.kind === 'relic') {
+    addRelic(run, item.id);
+    // A discount relic applies to the rest of this shop right away.
+    const mult = RELICS[item.id].priceMult;
+    if (mult) for (const other of room.stock) if (!other.sold) other.price = Math.round(other.price * mult);
+  }
   if (item.kind === 'cell') addCell(run, item.id);
   return true;
 }
@@ -513,7 +518,11 @@ function applyEffects(run, effects) {
       (room.gained ||= []).push({ kind: 'card', id: c.id, up: c.up });
     }
     if (fx.cardChoice) room.queue.push({ kind: 'cards', options: rollCards(run, fx.n || 3, 'normal', fx.cardChoice) });
-    if (fx.deck) room.queue.push({ kind: 'deck', op: fx.deck, n: fx.n || 1, source: 'event' });
+    if (fx.deck) {
+      // Only ask when at least one card qualifies, otherwise the event could never be left.
+      if (deckOptionsFor(run, fx.deck).length) room.queue.push({ kind: 'deck', op: fx.deck, n: fx.n || 1, source: 'event' });
+      else (room.gained ||= []).push({ kind: 'note', text: fx.deck === 'upgrade' ? 'Every card is already upgraded.' : 'No card qualified.' });
+    }
     if (fx.randomUpgrade) {
       const cands = r.shuffle(run.deck.filter((c) => canUpgrade(c.id, c.up)));
       for (const c of cands.slice(0, fx.randomUpgrade)) {
@@ -521,7 +530,13 @@ function applyEffects(run, effects) {
         (room.gained ||= []).push({ kind: 'upgrade', id: c.id });
       }
     }
-    if (fx.cells) for (let i = 0; i < fx.cells; i++) addCell(run, rollCell(r));
+    if (fx.cells) {
+      for (let i = 0; i < fx.cells; i++) {
+        const id = rollCell(r);
+        if (addCell(run, id)) (room.gained ||= []).push({ kind: 'cell', id });
+        else (room.gained ||= []).push({ kind: 'note', text: 'Your Cell slots are full.' });
+      }
+    }
     if (fx.fight) {
       room.stage = 'fight';
       room.encounter = fx.fight;
@@ -540,8 +555,12 @@ function nextPending(run) {
 export function deckChoiceOptions(run) {
   const pc = run.room?.pendingChoice;
   if (!pc || pc.kind !== 'deck') return [];
-  if (pc.op === 'upgrade') return run.deck.filter((c) => canUpgrade(c.id, c.up));
-  if (pc.op === 'duplicate') return run.deck.filter((c) => CARDS[c.id].type !== 'curse');
+  return deckOptionsFor(run, pc.op);
+}
+
+function deckOptionsFor(run, op) {
+  if (op === 'upgrade') return run.deck.filter((c) => canUpgrade(c.id, c.up));
+  if (op === 'duplicate') return run.deck.filter((c) => CARDS[c.id].type !== 'curse');
   return [...run.deck];
 }
 
@@ -550,7 +569,7 @@ export function resolveDeckChoice(run, uids) {
   const pc = room?.pendingChoice;
   if (!pc || pc.kind !== 'deck') return false;
   if (!uids || !uids.length) {
-    if (!pc.cancellable) return false;
+    if (!pc.cancellable && deckChoiceOptions(run).length) return false;
     room.pendingChoice = null;
     nextPending(run);
     return true;

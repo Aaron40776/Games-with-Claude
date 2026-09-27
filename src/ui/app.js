@@ -60,7 +60,8 @@ export class App {
       document.documentElement.style.setProperty('--vh', `${window.innerHeight}px`);
       this.scene.resize();
       this.combat?.updateInsets();
-      if (!this.combat && this.run && !this.run.room && !this.modals.length) this.route();
+      // Re-layout the map on resize; never navigate away from title or end screens.
+      if (!this.onTitle && !this.combat && this.run && !this.run.over && !this.run.room && !this.modals.length) this.route();
     };
     window.addEventListener('resize', () => { clearTimeout(this.resizeT); this.resizeT = setTimeout(onResize, 120); });
     onResize();
@@ -83,11 +84,16 @@ export class App {
   }
 
   snapshot() {
-    return { run: this.run ? R.serializeRun(this.run) : null, inRun: !!this.run && !this.onTitle };
+    const run = this.combat && this.combatStartSave ? this.combatStartSave : this.run ? R.serializeRun(this.run) : null;
+    return { run, inRun: !!this.run && !this.onTitle };
   }
 
   save() {
-    if (this.run && !this.run.over) store.saveRun(this.run);
+    if (!this.run || this.run.over) return;
+    // Mid-combat the engine has already changed relic counters and cells, but a
+    // reload restarts the fight from scratch, so save the state from before it.
+    if (this.combat && this.combatStartSave) store.saveRawRun(this.combatStartSave);
+    else store.saveRun(this.run);
   }
 
   /** Save and re-render after any run mutation. */
@@ -173,6 +179,7 @@ export class App {
   }
 
   leaveRoom() {
+    if (this.run.room?.pendingChoice) { this.showPendingChoice(); return; }
     const wasBoss = this.run.room?.type === 'boss';
     if (R.leaveRoom(this.run)) {
       if (wasBoss && !this.run.over) this.sfx.play('victory');
@@ -185,6 +192,7 @@ export class App {
     this.screenEl.dataset.screen = 'fight';
     this.tips.hide();
     this.renderHud();
+    this.combatStartSave = R.serializeRun(this.run);
     const g = R.makeCombat(this.run);
     g.start();
     this.combat = new CombatView(this, g);
@@ -196,9 +204,12 @@ export class App {
       this.combat.destroy();
       this.combat = null;
     }
+    this.combatStartSave = null;
   }
 
   onCombatEnd(g) {
+    // A view destroyed by Save & quit or Abandon must not finish a fight later.
+    if (!this.combat || this.combat.g !== g) return;
     R.finishCombat(this.run, g);
     this.endCombatView();
     if (this.run.over) store.clearRun();
@@ -434,7 +445,7 @@ export class App {
     const run = this.run;
     const pc = run.room.pendingChoice;
     if (pc.kind === 'cards') {
-      this.cardPicker(pc.options, 'Choose a card', (i) => { R.resolveCardChoice(run, i); this.commit(); }, true);
+      this.cardPicker(pc.options, 'Choose a card', (i) => { R.resolveCardChoice(run, i); this.commit(); }, true, false);
       return;
     }
     const opts = sortCards(R.deckChoiceOptions(run));
@@ -468,7 +479,7 @@ export class App {
   }
 
   /** Pick 1 of N cards (rewards / events). onPick(index|null). */
-  cardPicker(options, title, onPick, allowSkip = true) {
+  cardPicker(options, title, onPick, allowSkip = true, dismissible = allowSkip) {
     let chosen = null;
     const row = h('div.card-pick-row');
     options.forEach((c, i) => {
@@ -486,7 +497,7 @@ export class App {
       allowSkip && { label: 'Skip', onclick: () => { m.close(); onPick(null); } },
       { label: chosen === null ? 'Take card' : `Take ${cardName(options[chosen].id, options[chosen].up)}`, primary: true, disabled: chosen === null, onclick: () => { m.close(); onPick(chosen); this.sfx.play('card'); } },
     ].filter(Boolean);
-    const m = this.openModal(row, { title, sub: 'Tap a card to select it.', wide: true, actions: actions(), dismissible: allowSkip });
+    const m = this.openModal(row, { title, sub: 'Tap a card to select it.', wide: true, actions: actions(), dismissible });
   }
 
   chooseRewardCard() {

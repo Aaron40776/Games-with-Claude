@@ -57,7 +57,7 @@ export class CombatView {
     this.handEl.addEventListener('pointerdown', (e) => this.onPointerDown(e));
     this.handEl.addEventListener('pointermove', (e) => this.onPointerMove(e));
     this.handEl.addEventListener('pointerup', (e) => this.onPointerUp(e));
-    this.handEl.addEventListener('pointercancel', () => this.cancelPointer());
+    this.handEl.addEventListener('pointercancel', (e) => this.cancelPointer(e));
     this.handEl.addEventListener('pointerleave', (e) => {
       if (e.pointerType === 'mouse' && !this.ptr && !this.selected) this.setInspected(null);
     });
@@ -95,11 +95,13 @@ export class CombatView {
     this.app.sfx.setAct(this.g.run.act);
     await wait(this.d(500));
     await this.process();
+    if (this.destroyed) return;
     this.busy = false;
     this.refresh();
   }
 
   destroy() {
+    this.destroyed = true;
     window.removeEventListener('keydown', this.onKey);
     window.removeEventListener('resize', this.onResize);
     this.scene.onFrame = null;
@@ -316,6 +318,7 @@ export class CombatView {
   }
 
   select(uid) {
+    this.pendingCell = null;
     this.selected = uid;
     this.inspected = uid;
     this.aimTarget = null;
@@ -369,7 +372,8 @@ export class CombatView {
 
   onPointerDown(e) {
     const cardNode = e.target.closest('.card.in-hand');
-    if (!cardNode || !this.canInteract()) return;
+    // One card at a time: a second finger must not take over an active press or drag.
+    if (!cardNode || !this.canInteract() || this.ptr) return;
     e.preventDefault();
     this.app.sfx.unlock();
     const uid = cardNode.dataset.uid;
@@ -437,8 +441,9 @@ export class CombatView {
     this.select(uid);
   }
 
-  cancelPointer() {
-    if (this.ptr?.mode === 'drag') this.endDrag(-1, -1, true);
+  cancelPointer(e) {
+    if (!this.ptr || (e && e.pointerId !== this.ptr.id)) return;
+    if (this.ptr.mode === 'drag') this.endDrag(-1, -1, true);
     this.ptr = null;
   }
 
@@ -493,7 +498,7 @@ export class CombatView {
       label = inZone ? 'Release to play' : 'Drag into the field';
     }
     el.classList.toggle('will-play', armed);
-    this.showPlayZone({ armed, label });
+    this.showPlayZone({ armed, label, line: d.playLine });
     d.x = x;
     d.y = y;
     d.scale = scale;
@@ -605,7 +610,7 @@ export class CombatView {
     const z = this.playZone;
     if (!state) { z.hidden = true; return; }
     z.hidden = false;
-    z.style.height = `${Math.max(0, this.playLine())}px`;
+    z.style.height = `${Math.max(0, state.line ?? this.playLine())}px`;
     z.classList.toggle('armed', state.armed);
     z.querySelector('span').textContent = state.label;
   }
@@ -670,6 +675,7 @@ export class CombatView {
       return;
     }
     this.busy = true;
+    this.pendingCell = null;
     this.selected = null;
     this.inspected = null;
     this.kbTarget = null;
@@ -682,12 +688,13 @@ export class CombatView {
     this.g.playCard(uid, targetRef);
     await this.process();
     this.playDrop = null;
-    while (this.g.pending) {
+    while (this.g.pending && !this.destroyed) {
       const picked = await this.app.chooseCards(this.g.pending);
       this.g.resolveChoice(picked);
       await this.process();
     }
     this.currentPlay = null;
+    if (this.destroyed) return;
     this.busy = false;
     this.refresh();
     await this.checkOutcome();
@@ -712,7 +719,6 @@ export class CombatView {
     await this.process();
     this.busy = false;
     this.refresh();
-    this.app.save();
     await this.checkOutcome();
   }
 
@@ -721,15 +727,15 @@ export class CombatView {
     this.app.sfx.unlock();
     this.busy = true;
     this.deselect();
-    this.busy = true;
     this.refresh();
     this.g.endTurn();
     await this.process();
-    while (this.g.phase === 'enemy') {
+    while (this.g.phase === 'enemy' && !this.destroyed) {
       this.g.enemyStep();
       await this.process();
       await wait(this.d(180));
     }
+    if (this.destroyed) return;
     this.busy = false;
     this.refresh();
     await this.checkOutcome();
@@ -737,7 +743,7 @@ export class CombatView {
 
   async checkOutcome() {
     const g = this.g;
-    if (!g.outcome || this.finished) return;
+    if (!g.outcome || this.finished || this.destroyed) return;
     this.finished = true;
     this.busy = true;
     this.refresh();
@@ -757,10 +763,14 @@ export class CombatView {
 
   async process() {
     let evs = this.g.drain();
-    while (evs.length) {
-      for (const ev of evs) await this.playEvent(ev);
+    while (evs.length && !this.destroyed) {
+      for (const ev of evs) {
+        if (this.destroyed) return;
+        await this.playEvent(ev);
+      }
       evs = this.g.drain();
     }
+    if (this.destroyed) return;
     for (const u of [this.g.player, ...this.g.enemies]) {
       if (u.alive || u.isPlayer) this.display.set(u.ref, { hp: Math.max(0, u.hp), shield: u.shield });
     }

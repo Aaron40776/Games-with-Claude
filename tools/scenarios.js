@@ -140,6 +140,19 @@ await page.waitForTimeout(600);
 const resumed = await page.evaluate(() => ({ seed: window.__riftdeck.run?.seed, screen: document.querySelector('.screen-layer').dataset.screen }));
 check(resumed.seed === seedBefore && resumed.screen === 'map', `G: reload resumed the run (${JSON.stringify(resumed)})`);
 
+// I: quitting to the title during the enemy phase must not touch a new run
+await fight({ type: 'combat', stage: 'fight', encounter: ['leech', 'leech'] }, 'run.hp = 2;');
+await page.evaluate(() => {
+  const app = window.__riftdeck;
+  app.combat.endTurn(); // enemies will kill the runner during this phase
+  app.save();
+  app.toTitle();
+  app.startRun('FRESH1');
+});
+await page.waitForTimeout(6000);
+const fresh = await page.evaluate(() => ({ seed: window.__riftdeck.run.seed, over: window.__riftdeck.run.over, screen: document.querySelector('.screen-layer').dataset.screen }));
+check(fresh.seed === 'FRESH1' && !fresh.over && fresh.screen !== 'end', `I: an abandoned fight can't end a new run (${JSON.stringify(fresh)})`);
+
 // F: dying ends the run and records stats
 const runsBefore = await page.evaluate(() => window.__riftdeck.meta.runs);
 await fight({ type: 'combat', stage: 'fight', encounter: ['leech'] }, 'run.hp = 1;');
