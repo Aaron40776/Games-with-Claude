@@ -271,6 +271,19 @@ p { margin: 0; }
   .end-turn { min-width: 0; padding: 10px 14px; font-size: 13px; }
 }
 
+/* Area above the hand where a released card is played. */
+.play-zone {
+  position: absolute; left: 0; right: 0; top: 0; z-index: 44; pointer-events: none;
+  border-bottom: 2px dashed rgba(156, 165, 195, 0.45);
+  background: linear-gradient(0deg, rgba(54, 201, 240, 0.06), transparent 40%);
+  transition: background 0.15s, border-color 0.15s;
+}
+.play-zone span {
+  position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); white-space: nowrap;
+  padding: 6px 12px; background: rgba(6, 7, 13, 0.85); font: 600 13px var(--display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+}
+.play-zone.armed { border-color: var(--good); background: linear-gradient(0deg, rgba(91, 227, 155, 0.14), transparent 50%); }
+.play-zone.armed span { color: var(--good); }
 .aim { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 250; pointer-events: none; color: var(--energy); overflow: visible; }
 .aim-path { fill: none; stroke: currentColor; stroke-width: 5; stroke-dasharray: 10 8; stroke-linecap: round; filter: drop-shadow(0 0 6px currentColor); animation: dash 0.6s linear infinite; }
 .aim.on-target { color: var(--bad); }
@@ -360,7 +373,9 @@ p { margin: 0; }
 .edge.open { stroke: var(--energy); stroke-dasharray: 5 6; stroke-width: 3; animation: dash 0.8s linear infinite; }
 .node { position: absolute; width: 42px; height: 42px; margin: -21px 0 0 -21px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: #0c1020; box-shadow: inset 0 0 0 1.5px currentColor; cursor: pointer; }
 .node .ico { width: 24px; height: 24px; }
-.node:disabled { cursor: default; opacity: 0.4; }
+.node { scroll-margin: 48px; }
+.node:not(.reach):not(.visited):not(.current) { opacity: 0.45; }
+.node.picked { opacity: 1 !important; box-shadow: inset 0 0 0 2px currentColor, 0 0 0 3px #06070d, 0 0 0 5px var(--energy); animation: none; }
 .node.visited { opacity: 0.85; background: color-mix(in srgb, currentColor 22%, #0c1020); }
 .node.current { box-shadow: inset 0 0 0 2px currentColor, 0 0 0 4px rgba(255, 255, 255, 0.85); opacity: 1; }
 .node.reach { animation: nodepulse 1.3s ease-in-out infinite; box-shadow: inset 0 0 0 2px currentColor, 0 0 18px currentColor; }
@@ -370,6 +385,25 @@ p { margin: 0; }
 .node.n-boss .ico { width: 40px; height: 40px; }
 .boss-name { position: absolute; top: 100%; margin-top: 6px; font: 700 12px var(--display); letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap; }
 @keyframes nodepulse { 50% { transform: scale(1.12); } }
+.map-info {
+  display: flex; align-items: center; gap: 14px; width: 100%; margin-top: 8px; padding: 14px 16px; min-height: 76px;
+  background: var(--panel); clip-path: var(--cut); box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.map-info-empty { flex: 1; text-align: center; }
+.map-info-icon .ico, .map-info-icon { width: 40px; height: 40px; flex: none; }
+.map-info-icon .ico { width: 100%; height: 100%; }
+.map-info-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.map-info-floor { font: 600 11px var(--display); letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+.map-info-title { margin: 0; font-size: 18px; letter-spacing: 0.02em; text-transform: none; color: var(--text); }
+.map-info-text > p:not(.map-info-floor) { font-size: 15px; line-height: 1.35; color: #d5dbee; }
+.map-info-details { margin: 2px 0 0; padding-left: 18px; font-size: 14px; color: var(--muted); }
+.map-info-status { font-size: 14px; color: var(--energy); }
+.map-enter { flex: none; }
+@media (max-width: 560px) {
+  .map-info { flex-wrap: wrap; gap: 10px; padding: 12px; }
+  .map-info-icon { width: 30px; height: 30px; }
+  .map-enter { width: 100%; }
+}
 .legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px; padding: 10px 0 2px; font: 600 12px var(--display); letter-spacing: 0.06em; text-transform: uppercase; }
 .lg { display: inline-flex; align-items: center; gap: 4px; }
 .lg em { font-style: normal; color: var(--muted); }

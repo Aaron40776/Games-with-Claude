@@ -535,6 +535,7 @@ export class App {
       toggle('Sound effects', 'sound', [true, false], ['On', 'Off']),
       toggle('Music', 'music', [true, false], ['On', 'Off']),
       toggle('Animation speed', 'speed', ['normal', 'fast'], ['Normal', 'Fast']),
+      toggle('Play cards by', 'cardPlay', ['swipe', 'tap'], ['Swiping', 'Swipe or tap twice']),
       toggle('Graphics', 'quality', ['high', 'low'], ['High', 'Low']),
       inRun && this.run && h('p.dim.seed-line', `Seed ${this.run.seed} · Floor ${this.run.floor}`));
     const m = this.openModal(body, {
@@ -557,7 +558,7 @@ export class App {
   showHelp() {
     const body = h('div.help', { html: `
       <p><b>Goal.</b> Climb three acts of the rift and defeat the boss at the top of each map. Your HP carries over between fights.</p>
-      <p><b>Your turn.</b> You get <b class="kw">Energy</b> and draw 5 cards. Play cards by dragging them up (or tapping twice). Attacks that target one enemy need a target: drag the arrow onto it, or select the card and tap the enemy.</p>
+      <p><b>Your turn.</b> You get <b class="kw">Energy</b> and draw 5 cards. Swipe a card up into the field to play it. Attacks that target one enemy need a target: swipe onto that enemy (with only one enemy, anywhere in the field works). Tap a card to enlarge it and read it; tap it again to put it back.</p>
       <p><b>Intents.</b> The icon above each enemy shows what it will do next turn: attack (with damage), defend, buff, debuff or something unknown. Plan your <b class="kw">Shield</b> around it. Shield disappears at the start of your next turn.</p>
       <p><b>Growing your deck.</b> After fights you pick 1 of 3 cards. A lean deck draws its best cards more often, so skipping is often right. Rest sites heal or upgrade a card, shops remove cards.</p>
       <p><b>Keywords.</b> <b class="kw">Burn</b> hurts over time. <b class="kw">Exposed</b> takes 50% more attack damage. <b class="kw">Jammed</b> deals 25% less. <b class="kw">Charge</b> is stored energy for Discharge effects. <b class="kw">Fade</b> cards leave the fight after use. Tap or hover any icon for details.</p>

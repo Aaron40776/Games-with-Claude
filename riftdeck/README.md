@@ -12,8 +12,11 @@ push to `main`). Locally: `npm install && npm run build`, then open `dist/index.
 
 ## Playing
 
-- **Your turn:** you get 3 Energy and draw 5 cards. Drag a card up to play it. For attacks, drag
-  the arrow onto an enemy. You can also tap a card and then tap an enemy, or tap the card twice.
+- **Your turn:** you get 3 Energy and draw 5 cards. Swipe a card up into the field to play it
+  (a dashed line shows where it counts). Attacks go onto an enemy; with only one enemy, anywhere in
+  the field works. Tapping a card only enlarges it for reading. The settings have an optional
+  "swipe or tap twice" mode.
+- **Map:** tap a room to see what it is, then press *Enter*.
 - **Intents:** the icon above each enemy shows its next move. Plan your Shield around it.
 - **Between fights:** pick 1 of 3 cards, rest (heal or upgrade), shop, open treasure or take a
   chance on events.
