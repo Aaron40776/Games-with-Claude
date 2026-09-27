@@ -1,0 +1,352 @@
+RIFTLINE v2.3.3 – BIOM-FARBEN · UPGRADE-KARTEN AM PC · LAYOUT-KRITERIEN
+Basis: v2.3.2 · Build r233a0926g-r1 · 26.09.2026
+
+Gemeldet: „Eisflächen in Neon Yard" und „Upgrade-Karten sehen am PC komisch aus".
+
+1) „Eis in Neon Yard"
+   Geprüft: Neon Yard erzeugt in keiner Welle Eis (6 Seeds × 3 Threats × 45 Wellen,
+   auch während der Welle; Renderer zeichnet Eis nur aus der Arena). Ursache war
+   die Optik: Tempest und Aurora (beide Eis-Biome) hatten seit meinen Paletten aus
+   2.3.1 fast dieselbe Gitterfarbe wie Neon Yard (Farbabstand ΔE 16 bzw. 20,
+   Tempest↔Aurora 6, Catacombs↔Requiem 5). Mein Paletten-Kriterium prüfte nur
+   Helligkeit/Kontrast innerhalb eines Bioms, nicht die Unterscheidbarkeit.
+   Behoben: Gitterfarben aller 15 überarbeiteten Biome neu verteilt (jede in ihrem
+   Themen-Farbfenster), Boden/Nebel/Wände/Licht im Farbton des Gitters.
+   Mindestabstand zwischen zwei Biomen jetzt ΔE 32 (vorher 5). Neon Yard, Ember
+   Works, Void Core und Toxin Marsh behalten ihre Originalfarben.
+   Neues Kriterium: rlBiomeDistinct() im Deep test (Log) und in full-qa –
+   Gegenprobe: meldet mit den alten Farben 9 verwechselbare Paare.
+
+2) Upgrade-Karten am PC (bestand seit 2.2.2)
+   Die Karten waren das Handy-Zeilenlayout, auf 352×560 px gestreckt: 9 % der
+   Karte mit Inhalt, Rest leer; mit Insight (4 Karten) Umbruch 3+1.
+   Jetzt: echte Karten (Icon oben, Seltenheit, Name, Text zentriert), eine Reihe
+   mit 3 oder 4 Karten, Höhe nach Inhalt, Block vertikal zentriert.
+
+3) Beim Durchsehen ALLER Screens (PC 1920×955, Handy hoch, Handy quer) zusätzlich
+   gefunden und behoben:
+   - Werkstatt/Rekorde am PC über 1920 px Breite (Name links, Preis 1500 px
+     rechts) → zentriert, max. 1240 px, zweispaltig.
+   - Pause-Menü am PC mit 810 px breiten Knöpfen → 460 px; Build-Liste zentriert.
+   - Einstellungen: bei langen Beschreibungen (Clear warnings, Reduce flashes)
+     rutschte der Schalter unter den Text nach links → bleibt rechts daneben.
+   - Handy quer: Gegner-Hinweis lag über dem RESUME-Knopf → Hinweise sind hinter
+     Pause, Upgrade-Wahl und Run-Zusammenfassung ausgeblendet.
+   - Handy hoch: Boss-Hinweis verdeckte die Boss-Lebensleiste → Hinweise beginnen
+     im Bosskampf unter der Leiste.
+
+Warum das vorher durchrutschte: Das Layout-Audit prüfte nur Überlappung,
+Überlauf und Erreichbarkeit – nicht, ob etwas gestreckt, verwechselbar oder
+verdeckt aussieht. Neue Abschnitte in tests/full-qa.mjs:
+  visual     Biome unterscheidbar (ΔE ≥ 30) · Upgrade-Karten auf 6 Fenstergrößen
+             (1920×955, 1440×900, 1366×768, 1280×640, 1024×768; 3 und 4 Karten):
+             eine Reihe, gleiche Höhe, sichtbar, nicht abgeschnitten, Inhalt
+             füllt ≥ 50 %, Reroll darunter sichtbar
+  layout-*   (PC, Handy hoch, Handy quer) jeder Schalter/Regler neben seinem
+             Text und rechtsbündig · Listenzeilen höchstens 900 px breit ·
+             Hinweise während Pause unsichtbar · Hinweise unter der Boss-Leiste
+  Gegenprobe gegen 2.3.2: 7 Fehler gemeldet; gegen 2.3.1-Karten: Füllung 9 %.
+
+Firefox: Der Deep test aus deinem Firefox-Log war komplett OK. Meine automatischen
+Tests laufen nur in Chromium – Playwright-Firefox lässt sich in dieser Umgebung
+nicht herunterladen. Verwendete CSS-Features (:has, Grid) werden von aktuellen
+Firefox-Versionen unterstützt; :has ab Firefox 121.
+
+Ergebnisse 2.3.3:
+  full-qa.mjs   alle Abschnitte grün (files, saves, workshop, ui ×2, run ×2,
+                visual, layout ×3, buttons)
+  e2e.mjs       5 Geräteprofile, 0 Fehler
+  Deep test     ok · world-audit 240 Wellen, 0 Befunde · data-audit ok
+  run-audit     Bot-Run bis Welle 22 inkl. Endlos, alle Checks OK
+
+================================================================================
+
+RIFTLINE v2.3.2 – KEINE KISTEN IN BOSSWELLEN · SYSTEMATISCHE QA
+Basis: v2.3.1 · Build r232a0926f-r1 · 26.09.2026
+
+Gewünschte Änderung:
+- Bosswellen enthalten keine Versorgungskisten mehr (auch nicht durch Field
+  Supply / Route Scanner). Deep test prüft Wellen 2–30.
+
+Neue Test-Suite tests/full-qa.mjs – jede Prüfung hat ein festes Kriterium:
+  files     alle vom Service Worker vorgeladenen Dateien und Manifest-Icons
+            existieren · Version identisch in index.html / build-info / SW ·
+            keine fehlgeschlagenen Requests, keine Fehler beim Start
+  saves     ECHTE Spielstände aus 2.2.2 und 2.3.1 (tests/fixtures, mit offenem
+            Upgrade-Angebot) · kein Save · kaputtes JSON · übergroßer Save ·
+            manipulierte Werte · blockierter Speicher (privater Modus).
+            Kriterien: Fortschritt + Einstellungen bleiben erhalten und wirken,
+            Fortsetzen stellt die Upgrade-Wahl wieder her, jeder Wert landet im
+            gültigen Bereich, nichts Unlesbares wird überschrieben,
+            Speichern→Laden ist verlustfrei
+  workshop  jedes der 18 Module wirkt genau wie beschrieben · jedes der 84
+            Upgrades verändert mit jeder der 21 Waffen mindestens einen Wert
+  ui-*      (PC + Handy per Touch) jede Einstellung: Daten, Speicher, Wirkung,
+            übersteht Neuladen · alle 57 Werkstatt-Stufen per Klick, exakte
+            Kosten · Waffenkauf mit/ohne Splitter · Bedrohungsstufe · Export,
+            Import (ungültig / alter 2.2.2-Export) · Reset behält Einstellungen ·
+            Tutorial wiederholen
+  run-*     (PC + Handy) Tutorial beim ersten Run · Pause→Neustart · Welle
+            geschafft→Upgrade-Wahl · Reroll · Bosswelle 10 mit Boss-Leiste und
+            ohne Kisten · Sieg in Welle 20 → Endlos → HUD sichtbar · Pause→
+            Abbrechen · Tod→Nochmal · Verlauf + alle 48 Meilensteine · Meilenstein
+            einlösen zahlt genau einmal · Post-run audit ohne FAIL
+  buttons   jedes der 65 Bedienelemente hat einen Event-Handler und einen Namen
+
+Gefundene und behobene Fehler:
+- Endlos-Modus: das HUD blieb nach dem Sieg ausgeblendet (seit 2.2.2). Auf
+  Touch-Geräten gab es damit weder Pause- noch Dash-/Nova-Knöpfe oder
+  Lebensanzeige. Der Run-Monitor (Test im Log) meldet jetzt „FAIL hud", sobald
+  das HUD während einer gespielten Welle >1,5 s fehlt (Mutationstest: ohne Fix
+  FAIL, mit Fix OK).
+- Ein Spielstand mit kaputtem JSON oder >256 KB wurde verworfen und beim ersten
+  Autosave endgültig überschrieben. Er wird jetzt vorher in
+  riftline.save.v1.backup-<Zeit> gesichert.
+- Importierte/manipulierte Saves konnten Lautstärke 2 (Regler max. 1) und Zoom 0
+  setzen. Lautstärke jetzt 0–1, Zoom rastet auf Nah/Normal/Fern ein.
+- Daten-Audit (tests/data-audit.mjs): Waffen-Karussell sprang im Preis (jetzt
+  nach Preis sortiert) · Sentinel und Repair Beacon teilten sich die Farbe mit
+  Bomber/Mender · Ashen Relay, Verdant Reactor, Starfall und Fracture hatten keine
+  eigenen Hindernisformen · Route Scanner hatte kein Icon · Drone, Driller,
+  Beacon und Weaver hatten keine Obergrenze pro Welle.
+- Werkstatt-Texte: Nova Cell setzt eine Untergrenze („mindestens 25 %"), Rift
+  Battery/Reactor Core addieren pro Welle; Drone Bay wirkt nur mit dem Wingman-
+  Upgrade; Field Supply und Route Scanner beschreiben jetzt ihre echte Wirkung.
+
+Offen (Design-Entscheidung, nicht geändert):
+- Field Supply und Route Scanner sind in der Wirkung identisch (+1 Kiste pro
+  Welle ab Welle 2, außer Bosswellen, und +2 Splitter pro Kiste und Stufe).
+  Vorschlag: eines der beiden Module auf eine andere Wirkung umbauen.
+
+Ergebnisse 2.3.2:
+  full-qa.mjs     152 Prüfungen, 0 Fehler
+  e2e.mjs         5 Geräteprofile, 0 Fehler
+  Deep test       ok (plan, events, sfx, hunt, palette, music, snapshot, features)
+  world-audit     240 Wellen · 16 572 Spawns · 48 Bosse · 0 Befunde
+  data-audit      keine Befunde
+  run-audit       Bot-Run bis Welle 22 inkl. Endlos: alle Checks OK
+                  (input WARN ist erwartet – der Bot steuert per API)
+
+================================================================================
+
+RIFTLINE v2.3.1 – BIOM-KONSISTENZ & WELT-AUDIT
+Basis: v2.3.0 · Build r231a0926e-r1 · 26.09.2026
+
+Ursache der "gemischten Farben":
+Die 14 Biome aus den Content-Packs 2.0–2.2 (Tempest, Prism Caverns, Ashen Relay,
+Verdant Reactor, Starfall, Fracture, Overgrowth, Catacombs, Aurora, Drowned,
+Solar Verge, Foundry, Bloom Rift, Requiem) hatten verwürfelte Farbwerte: z. B.
+neongrüner Boden (Drowned, Catacombs), neongrüner Nebel (Prism Caverns),
+knallgrünes Umgebungslicht (Overgrowth). Zusätzlich setzte der Wellen-Director
+in JEDES Biom rotierend Lava, Eis und Säure. Beides stammt aus den 2.0–2.2-Packs,
+nicht aus 2.2.3/2.3.0 – ich hatte die Farbdaten im ersten Review aber nicht geprüft.
+
+Behoben:
+- Neue Paletten für 14 Biome nach festen Regeln: dunkler Boden/Nebel/Bodenlicht
+  im Farbton des Bioms, heller Gitter-Ton, kontrastierender Akzent, mittelhelles
+  Himmelslicht, dunkle Wände. Der Deep test prüft diese Regeln für alle 19 Biome.
+- Ein Gefahren-Thema pro Biom: Lava (Ember Works, Ashen Relay, Fracture, Solar
+  Verge, Foundry), Eis (Cryo Vault, Tempest, Prism Caverns, Starfall, Aurora),
+  Säure (Toxin Marsh, Verdant Reactor, Overgrowth, Drowned, Bloom Rift),
+  Portale (Void Core, Catacombs, Requiem), Neon Yard ohne Gefahren.
+- Champion-Varianten der 2.2-Biome zeigten keine Wirkung und keine Färbung:
+  jetzt echten Varianten zugeordnet (Solar→Scorch, Foundry→Frost,
+  Bloom→Toxic, Requiem→Phase).
+- Gegner konnten vom Spieler in Wände geschoben werden (268 Fälle im Audit).
+
+Welt-Audit (tests/world-audit.mjs, 6 Seeds × 40 Wellen, alle Threats):
+  Route: jede Welle genau ein Biom, nie zweimal hintereinander, alle 19 Biome
+         in Welle 1–19 · Layout-Schlüssel passt zum Biom
+  Wände: innerhalb der Arena, nicht am Startpunkt, keine Überlappung,
+         Arena bleibt zusammenhängend begehbar
+  Gefahren: nur das Thema des Bioms, nie in Wänden, Portale gültig
+  Spawns (16 469 geprüft): nicht in Wänden, nicht außerhalb, nicht auf
+         Gefahren, mind. 4 m vom Spieler, kein Gegner vor seiner Freischalt-Welle
+  Gegner: nie in Wänden · Bosse spawnen frei · Pickups/Caches nicht in Wänden
+  Ergebnis: 0 Befunde.
+Run-Monitor (neu): prüft während des Spiels, dass Renderer-Biom, Boden-Palette
+und Wände immer zur aktuellen Welle gehören, und meldet Gegner in Wänden.
+
+
+RIFTLINE v2.3.0 – CONTENT & QOL UPDATE
+Basis: v2.2.3 · Build r230a0926d-r1 · 26.09.2026
+
+======================================================================
+A. NEU IN 2.3.0
+======================================================================
+[1] Jump-Pads komplett entfernt
+    Generierung (Neon Yard), Sprung-Logik, Rendering, Sound, Tipp-Toast,
+    Laufzeit-Zähler, Health-/Audit-/Selbsttest-Prüfungen. Der Deep test
+    schlägt Alarm, falls ein Biom je wieder Pads erzeugt.
+[2] Eigene 3D-Modelle für 12 Gegner (bisher alle eine Grunt-Box)
+    Leaper (Hüpfer mit Sprungbeinen), Rift Turret (Geschütz auf Sockel),
+    Charger (Rammkeil mit Horn), Minebot (Kuppel-Krabbe mit Minen),
+    Sapper (Pionier mit Sprengrucksack), Phantom (Kapuzen-Geist),
+    Sentinel (schwebendes Auge im Ring), Carrier (Untertasse mit Hangars),
+    Needler Drone (Quadrocopter), Driller (Kettenfahrzeug mit Bohrer),
+    Repair Beacon (Turm mit Heil-Ringen), Rift Weaver (Spinne).
+[3] Eigene Musik für alle 19 Biome (vorher 12 Biome mit Neon-Yard-Thema):
+    je eigene Akkordfolge + Klangfarben (Bass/Arpeggio/Lead/Filter).
+[4] Records › Recent runs: die letzten 12 Runs mit Ergebnis, Welle, Waffe,
+    Threat, Zeit, Kills, verdienten Shards, Todesursache und Top-Upgrades.
+    Wird im Spielstand gespeichert und beim Laden bereinigt.
+[5] Gegner-Intro: Beim ersten Auftreten jedes Gegnertyps ein kurzer Hinweis
+    ("NEW · CHARGER — …"), höchstens einer alle 6,5 s, nicht während des Tutorials.
+[6] Balance / Gameplay
+    - Repair Beacon heilt 8 % statt 12 %, pro Ziel höchstens alle 3 s,
+      Beacons heilen sich nicht gegenseitig (vorher stapelbar ohne Grenze).
+    - Nachzügler: Wenn nur noch wenige Gegner übrig sind, kommen sie nach 9 s
+      zum Spieler. 8 Fernkampf-Gegner (Turret, Minebot, Sapper, Sentinel,
+      Carrier, Drone, Beacon, Weaver) ignorierten das und flohen endlos –
+      z. B. der letzte Beacon in einer Ecke. Behoben.
+[7] Fehler gefunden und behoben
+    - Rift Weaver-Teleport und Beacon-Heilung erzeugten Effekte mit NaN-
+      Koordinaten (fehlende Ziel-/Radiusangaben im Event).
+
+Neue Prüfungen:
+- Run-Monitor: Event-Nutzdaten (Positionen/Ziele) müssen endlich sein.
+- Deep test: Musik für jedes Biom wird testweise komplett durchgeplant,
+  Arena-Features aller Biome, Nachzügler aller Gegnertypen kommen näher,
+  Event-Nutzdaten aller Gegner. Health "content-coverage" prüft Modell,
+  Sound, Musik und Intro-Text für jeden Inhalt.
+- Mutationstests: Weaver-Fix und Nachzügler-Fix zurückgenommen ->
+  Deep test meldet "event-payload" bzw. "straggler-kites".
+
+Regression 2.3.0 (headless Chromium, Software-WebGL):
+- E2E auf 5 Geräteprofilen (PC 1440x900 + 1280x640, Tablet 1024x768,
+  Handy 390x844 + 844x390, Touch): alle Prüfungen bestanden, 0 FAIL.
+- Echter Run mit Bot (Cyclone Blades): Welle 1 -> Sieg -> Endless -> Welle 23,
+  Post-run audit 0 FAIL (1 WARN "input", weil der Bot direkt steuert).
+- Deep test: alle Abschnitte grün.
+- Simulation Welle 1–31 (Pulse, Volley, Razor Loop, Cyclone): 0 Fehler, 0 NaN.
+  Razor Loop blieb in 2.2.3 an einem fliehenden Beacon hängen – jetzt nicht mehr.
+  Übrige "hängende" Wellen gehen auf den simplen Test-Bot zurück (nimmt immer das
+  erste Upgrade, greift Bulwarks frontal an), nicht auf Spielfehler.
+
+
+======================================================================
+B. VORHERIGES REVIEW: v2.2.3 – CODE-REVIEW, BUGFIXES & NEUER RUN-TEST
+======================================================================
+Basis: v2.2.2 ("PC-Menu-Fix-QA-Final") · Build r223a0926c-r1 · 26.09.2026
+
+======================================================================
+1. KRITISCHE FEHLER IN 2.2.2 (behoben)
+======================================================================
+[K1] Spiel startet nicht mehr, sobald ein Spielstand existiert
+     `var sr=1/60` (Timestep der Spielschleife) überschrieb `function sr()`
+     (Bereinigung gespeicherter Runs). Ab dem 2. Start: "sr is not a function"
+     beim Laden -> kein 3D, Menü ohne Funktion. Auch Backup-Import war kaputt.
+     Fix: Timestep heißt jetzt `rlStep`. Zusätzlich lädt `rlLoadSave()` einen
+     defekten Spielstand nie mehr "tödlich": 1) normal, 2) ohne offenen Run,
+     3) frisches Profil + Sicherungskopie `riftline.save.v1.backup-<zeit>`.
+
+[K2] Absturz ab Welle 18
+     Director-Bonusgegner wurden als Text ("drone") statt {type, elite} in den
+     Spawn-Plan gelegt -> spawnEnemy(undefined) -> Crash-Screen. Kein Run kam
+     bis Welle 20 (Boss, Sieg, Endless unerreichbar).
+
+[K3] Touch: "Home" im Game-Over startete sofort einen neuen Run
+     Nach dem Tap schickt der Browser einen Kompatibilitäts-Klick an die Stelle,
+     an der jetzt START RUN liegt. Der Guard ließ "anderer Button an gleicher
+     Stelle" absichtlich durch. Gleiches Risiko: Einstellungen umschalten oder
+     Workshop-Module kaufen nach einer Navigation.
+     Fix: globaler Capture-Schutz verwirft genau diesen einen Klick (800 ms, 36 px).
+
+[K4] UI friert beim Start und nach jedem Run ein
+     rlRunHealth() startete den kompletten Simulations-Selbsttest synchron:
+     2x beim Start, 1x nach jedem Run, 1x beim Öffnen des Logs.
+     Gemessen (Headless): Long Tasks von 19,5 s + 11,8 s beim Start.
+     Fix: Schnelle Checks beim Start (1x, nach 900 ms), Selbsttest nur auf
+     Wunsch ("Deep test" im Diagnose-Dialog). Startup jetzt ohne Selbsttest-Block.
+
+======================================================================
+2. WEITERE FEHLER (behoben)
+======================================================================
+- Versionsvertrag: JS stand noch auf 2.2.1 bzw. einem alten Build-Code
+  -> Health "version-contract" FAIL. Jetzt überall 2.2.3 / r223a0926c-r1
+  (HTML, JS, Dateiname, build-info.json, Service-Worker-Cache, _headers).
+- _headers: Die "immutable"-Regel zeigte auf game-v2.2.1-final.js.
+- Event-Kollisionen neuer Gegner:
+  Phantom sendete "phase" -> Banner "PHASE 1 – The core adapts" + Screenshake;
+  Charger/Phantom/Driller sendeten "dash" -> Spieler-Dash-Sound, Ring um den
+  Spieler, Tutorial-Schritt "Dash" wurde erfüllt. Jetzt eigene Events.
+- 14 von 21 Waffen hatten keinen Schuss-Sound -> nutzen jetzt die passende Stimme.
+- 11 Upgrade-Texte zeigten beim ersten Angebot "+0 %" (Text nutzte die aktuelle
+  statt der nächsten Stufe), z. B. Overclock, Bounty, Focus, Hazmat, Echo.
+- Zwei Upgrades hießen "Siphon" -> "leech" heißt jetzt "Nanite Leech".
+  Vortex hatte denselben Beschreibungstext wie Graviton Core.
+- 4. Drohne (Gunship + Drone Bay) war unsichtbar (Renderpool max. 3);
+  Drohne 3/4 lagen auf Drohne 2.
+- Minebot/Sapper-Minen ohne Sound, Supply Loop ohne Feedback.
+- Toast-Varianten "good"/"warn" hatten kein CSS.
+- Layout: Game-Over bei 1280x640 (Laptop-Browserfenster) und 844x390 (Handy
+  quer): RUN AGAIN/Home lagen unter dem Falz -> zweispaltiges Layout.
+- Layout-Audit meldete Buttons in Scroll-Bereichen als "offscreen" (Fehlalarm).
+- Alte CSS-Regel verschob die Bottom-Navigation in kurzen Nicht-Handy-Fenstern.
+
+======================================================================
+3. TOTER CODE (entfernt)
+======================================================================
+- Cloud-Sync über window.claude (op/cp): unerreichbar, da `ua` fest true ist.
+- `false&&(window.__rift=...)`, leere if-Blöcke, immer wahre wasKills-Prüfung.
+Nicht angefasst (bewusst, siehe Empfehlungen): die 6 übereinanderliegenden
+CSS-Schichten (v1.6.1 … v1.8.0) in index.html.
+
+======================================================================
+4. NEUER TEST NACH JEDEM RUN (Post-run audit)
+======================================================================
+Ein Run-Monitor beobachtet den laufenden Run (nur die echte Spielwelt, nicht
+Test-Welten) und prüft am Ende 15 Punkte. Ergebnis steht in
+Settings › Diagnostics; bei FAIL erscheint ein Hinweis-Toast.
+
+  runtime-errors  neue/erneute Fehler seit Run-Start
+  final-state     Arena, Portale, Pads, alle Objekte endlich (bisheriger Test)
+  invariants      alle 20 Steps: Spieler/Gegner/Schüsse endlich, in der Arena,
+                  HP <= MaxHP, Nova 0–100, Pool-Limits
+  spawn-plan      jeder Wellenplan: nur gültige {type,elite}   (hätte K2 gefunden)
+  waves           Wellenende korrekt, Soft-Lock-Erkennung, Dauer je Welle
+  spawns          jeder gespawnte Typ bekannt und mit 3D-Mesh
+  events          jedes Event hat einen Verbraucher; Boss-Events nur mit Boss;
+                  "dash" nur bei echtem Spieler-Dash               (hätte F14 gefunden)
+  economy         Shards/Kills nehmen nie ab
+  snapshots       Wellen-Snapshot wird vom echten Loader akzeptiert, der letzte
+                  wird in eine echte Spielwelt wiederhergestellt (hätte K1 gefunden)
+  performance     FPS, Anteil langsamer Frames, JS-Zeit pro Frame
+  input           Eingaben während des Runs
+  payout          Shard-Gutschrift == Formel (Threat, Salvager, Clear-Bonus)
+  records         Kills/Bestwelle/Tode/Clears korrekt verbucht
+  persistence     Run gelöscht, Save round-trip, localStorage == Speicher
+  end-screen      Zusammenfassung sichtbar, HUD weg, alle Buttons erreichbar
+
+"Deep test" (auf Wunsch) = bisheriger Selbsttest + 6 neue Prüfungen:
+Wellenpläne 2–60 (Threat 0/5) mit echtem Spawn, Event-Vertrag für alle 25
+Gegner, Snapshot-Roundtrip, Upgrade-Texte ohne "+0", Sound-Stimme je Waffe
+über den echten Sound-Verbraucher, Jump-Pad-Geometrie + freie Flugbahn.
+
+Mutationstest: Mit zurückgenommenen Fixes (K1, K2, Events, Texte, Sounds)
+meldet der Deep test: plan-member ×92, event-boss-only, event-player-dash,
+sfx-silent-weapon ×14, snapshot-exception, desc-zero ×10. Mit Fixes: grün.
+
+======================================================================
+5. REGRESSION (headless Chromium, Software-WebGL)
+======================================================================
+E2E (tests/e2e.mjs) auf 1440x900, 1280x640 (Maus/Tastatur), 1024x768,
+390x844, 844x390 (Touch): Menü, Workshop/Records/Settings, Waffenwahl,
+Start, Bewegung, Dash, Pause/Resume, Welle klären, Upgrade wählen,
+Reload -> CONTINUE -> Welle 2, Tod, Game-Over, Home (Touch!), Diagnose-Dialog,
+Layout-Audit auf jedem Screen, Post-run audit ohne FAIL: alle bestanden.
+Echter Run mit Bot (tests/run-audit.mjs): Welle 1 -> Sieg (Welle 20) ->
+Endless -> Welle 23/24, Audit 0 FAIL (1 WARN "input", weil der Bot direkt steuert).
+Simulation (tests/sim.mjs): 8 Waffen bis Welle 31, 0 Fehler, 0 NaN.
+Hinweis: Headless-WebGL läuft mit 4–8 FPS; echte GPU-Leistung wurde nicht
+gemessen. Die Performance-Zeile im Audit liefert diese Werte ab jetzt vom Gerät.
+
+======================================================================
+6. BEOBACHTUNGEN / EMPFEHLUNGEN (Stand 2.3.0)
+======================================================================
+- Wellen-Caches spawnen auch in Bosswellen (Code prüft `this.boss`, der beim
+  Wellenstart immer null ist). Unklar, ob gewollt – daher unverändert.
+- Die Spiellogik liegt nur als minifiziertes Bundle (inkl. three.js) vor.
+  Für weitere Arbeit wäre ein lesbarer Quellstand sehr sinnvoll.
+- Die sechs übereinanderliegenden CSS-Schichten in index.html sind ein
+  eigener Aufräum-Schritt (Risiko für das Aussehen, daher nicht angefasst).

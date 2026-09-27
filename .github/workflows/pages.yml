@@ -1,5 +1,7 @@
-# Builds the games and publishes them on GitHub Pages.
-# Riftdeck: https://<user>.github.io/Games-with-Claude/riftdeck/
+# Tests and builds the games and publishes them on GitHub Pages.
+#   https://<user>.github.io/Games-with-Claude/            game picker (pages/index.html)
+#   https://<user>.github.io/Games-with-Claude/riftline/   Riftline
+#   https://<user>.github.io/Games-with-Claude/riftdeck/   Riftdeck
 name: Deploy to GitHub Pages
 
 on:
@@ -19,30 +21,45 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: riftdeck
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: riftdeck/package-lock.json
-      - name: Install
+          cache-dependency-path: |
+            riftdeck/package-lock.json
+            riftline/package-lock.json
+
+      - name: Riftdeck – install
+        working-directory: riftdeck
         run: npm ci
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
-      - name: Test
+      - name: Riftdeck – test
+        working-directory: riftdeck
         run: npm test
-      - name: Build
+      - name: Riftdeck – build
+        working-directory: riftdeck
         run: npm run build
+
+      # Riftline's tests drive the real game in headless Chromium, so the browser is installed here.
+      - name: Riftline – install
+        working-directory: riftline
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Riftline – build and test
+        working-directory: riftline
+        run: npm test
+
       - name: Assemble site
         run: |
-          mkdir -p ../site/riftdeck
-          cp dist/index.html ../site/riftdeck/index.html
-          cp ../pages/index.html ../site/index.html
-          touch ../site/.nojekyll
+          mkdir -p site/riftdeck site/riftline
+          cp riftdeck/dist/index.html site/riftdeck/index.html
+          cp -r riftline/dist/. site/riftline/
+          cp pages/index.html site/index.html
+          touch site/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

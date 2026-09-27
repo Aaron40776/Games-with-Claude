@@ -1,0 +1,10 @@
+import { chromium } from 'playwright';
+const browser = await chromium.launch({ args: ['--use-angle=swiftshader','--enable-unsafe-swiftshader'] });
+const page = await browser.newPage();
+await page.goto(process.argv[2] || 'http://localhost:8124/index.html');
+await page.waitForFunction(() => window.__riftTest && window.__riftTest.game, null, { timeout: 60000 });
+const res = await page.evaluate(() => { const r = window.__riftTest.selftest(); return { ok: r.ok, ms: r.ms, fail: r.fail, x21: r.expansion21?.fail, x22: r.expansion22?.fail, x23: r.expansion23 }; });
+console.log(JSON.stringify(res, null, 1));
+console.log(res.ok ? 'DEEP TEST: ok' : 'DEEP TEST: FAIL');
+await browser.close();
+process.exitCode = res.ok ? 0 : 1;
