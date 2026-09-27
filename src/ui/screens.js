@@ -13,6 +13,7 @@ import { RELICS } from '../data/relics.js';
 import { CARDS, cardName } from '../data/cards.js';
 import { ENCOUNTERS, ENEMIES, ACT_NAMES } from '../data/enemies.js';
 import { randomSeed, cleanSeed } from '../core/rng.js';
+import { canInstall, install, watchInstall } from './shell.js';
 
 function panel(cls, ...children) {
   return h(`section.panel.${cls}`, ...children);
@@ -31,6 +32,9 @@ export function renderTitle(app) {
     } else app.startRun(seed);
   };
   const m = app.meta;
+  // Only on the published site (it ships a manifest), not yet installed, and only where installing works.
+  const installLink = h('button.link', { type: 'button', hidden: !canInstall(), onclick: () => install(() => app.showInstallHelp()) }, 'Install app');
+  watchInstall(() => { installLink.hidden = !canInstall(); });
   const el = h('div.title-screen',
     h('div.title-block',
       h('p.eyebrow', 'A Riftline deckbuilder'),
@@ -44,7 +48,8 @@ export function renderTitle(app) {
       h('div.title-links',
         h('button.link', { type: 'button', onclick: () => { seedRow.hidden = !seedRow.hidden; if (!seedRow.hidden) seedInput.focus(); } }, 'Custom seed'),
         h('button.link', { type: 'button', onclick: () => app.showHelp() }, 'How to play'),
-        h('button.link', { type: 'button', onclick: () => app.showSettings() }, 'Settings'))),
+        h('button.link', { type: 'button', onclick: () => app.showSettings() }, 'Settings'),
+        installLink)),
     h('div.title-stats',
       stat('Runs', m.runs), stat('Wins', m.wins), stat('Best floor', m.bestFloor), stat('Best score', m.bestScore)));
   return el;

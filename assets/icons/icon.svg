@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="0.62" cy="0.18" r="0.95">
+      <stop offset="0" stop-color="#1d3160"/>
+      <stop offset="0.62" stop-color="#06070d"/>
+    </radialGradient>
+    <linearGradient id="face" x1="0" y1="-210" x2="0" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1b2345"/>
+      <stop offset="1" stop-color="#0b0f1f"/>
+    </linearGradient>
+    <filter id="glow" filterUnits="userSpaceOnUse" x="-140" y="-260" width="280" height="300">
+      <feGaussianBlur stdDeviation="9"/>
+    </filter>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <g transform="translate(256 376) scale(1.12)">
+    <path d="M-53 -210H75V-22L53 0H-75V-188Z" transform="translate(0 10)" fill="#000" opacity="0.55" filter="url(#soft)"/>
+    <path d="M-53 -210H75V-22L53 0H-75V-188Z" transform="rotate(-18)" fill="url(#face)" stroke="#b98cff" stroke-width="6" stroke-linejoin="miter"/>
+    <path d="M-53 -210H75V-22L53 0H-75V-188Z" transform="rotate(18)" fill="url(#face)" stroke="#ff6a3d" stroke-width="6" stroke-linejoin="miter"/>
+    <path d="M-53 -210H75V-22L53 0H-75V-188Z" fill="none" stroke="#36c9f0" stroke-width="16" opacity="0.5" filter="url(#glow)"/>
+    <path d="M-53 -210H75V-22L53 0H-75V-188Z" transform="rotate(0)" fill="url(#face)" stroke="#36c9f0" stroke-width="7" stroke-linejoin="miter"/>
+    <circle cx="-44" cy="-180" r="15" fill="#ffc84a"/>
+    <path d="M-4 -196L9 -150L-7 -112L11 -66L-5 -30L4 -12" fill="none" stroke="#36c9f0" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)" opacity="0.95"/>
+    <path d="M-4 -196L9 -150L-7 -112L11 -66L-5 -30L4 -12" fill="none" stroke="#ffffff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

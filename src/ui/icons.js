@@ -22,6 +22,8 @@ const P = {
   faded: `<rect x="6.5" y="4" width="11" height="16" rx="1.5" stroke-dasharray="3 2.5"/>`,
   menu: `<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>`,
   close: `<path d="M6 6l12 12M18 6L6 18"/>`,
+  share: `<path d="M12 3v12M8 7l4-4 4 4"/><path d="M8 10H5v11h14V10h-3"/>`,
+  addbox: `<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8.5v7M8.5 12h7"/>`,
   check: `<path d="M4 12.5l5 5L20 6.5"/>`,
   arrow: `<path d="M5 12h14M13 6l6 6-6 6"/>`,
   // map nodes

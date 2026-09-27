@@ -576,6 +576,18 @@ export class App {
       <p class="dim">Keyboard: 1–9 select a card, Enter plays it, arrow keys pick a target, E ends the turn, Esc cancels.</p>` });
     const m = this.openModal(body, { title: 'How to play', actions: [{ label: 'Got it', primary: true, onclick: () => m.close() }] });
   }
+
+  /** iOS has no install dialog a page can open, so this walks through Safari's share menu. */
+  showInstallHelp() {
+    const body = h('div.help.install-help', { html: `
+      <ol>
+        <li>Tap <b>Share</b> ${icon('share')} in the browser bar.</li>
+        <li>Choose <b>Add to Home Screen</b> ${icon('addbox')}.</li>
+        <li>Start Riftdeck from your Home Screen. It runs full screen and works offline.</li>
+      </ol>
+      <p class="dim">The installed app keeps its own save: a run started here in the browser does not carry over.</p>` });
+    const m = this.openModal(body, { title: 'Install Riftdeck', actions: [{ label: 'Got it', primary: true, onclick: () => m.close() }] });
+  }
 }
 
 export { safeBottom, relicRow, cardName, RELICS };
