@@ -65,6 +65,15 @@ const idle = (page) => page.waitForFunction(() => !window.__riftdeck.combat?.bus
   await page.waitForTimeout(150);
   const aiming = await page.evaluate(() => window.__riftdeck.combat.aimTarget);
   check(!!aiming, 'desktop: dragging an attack shows a target under the pointer');
+  // Software rendering can drop to ~2 fps here, so give the held card time to settle.
+  let held = null;
+  for (let i = 0; i < 40; i++) {
+    held = await page.locator('.card.dragging').boundingBox();
+    if (held && target.x > held.x && target.x < held.x + held.width) break;
+    await page.waitForTimeout(100);
+  }
+  check(!!held && target.x > held.x && target.x < held.x + held.width && target.y > held.y - 10 && target.y < held.y + held.height,
+    `desktop: the card itself follows the pointer (card ${held && [Math.round(held.x + held.width / 2), Math.round(held.y), Math.round(held.y + held.height)]}, pointer ${Math.round(target.x)},${Math.round(target.y)})`);
   await page.mouse.up();
   await idle(page);
   const after = await state(page);
@@ -131,14 +140,36 @@ async function swipe(page, cdp, from, to, steps = 8) {
   await idle(page);
   const afterSwipe = await state(page);
   check(afterSwipe.enemyHp < before.enemyHp, `phone: swipe into the field plays the attack (${before.enemyHp} -> ${afterSwipe.enemyHp})`);
+  // An enlarged card can be dragged in any direction, straight onto the enemy.
+  const idxE = afterSwipe.hand.findIndex((id) => id === 'pulse_shot' || id === 'arc_lance');
+  if (idxE >= 0) {
+    const bE = await stableBox(page.locator('.card.in-hand').nth(idxE));
+    await page.touchscreen.tap(bE.x + bE.width / 2, bE.y + 20);
+    const big = await stableBox(page.locator('.card.in-hand.selected'));
+    const enemy = await page.evaluate(() => { const cv = window.__riftdeck.combat; const r = cv.hitRects.get(cv.g.enemies[0].ref); return { x: (r.x0 + r.x1) / 2, y: (r.y0 + r.y1) / 2 }; });
+    const hpE = (await state(page)).enemyHp;
+    // start sideways first: must not turn into browsing the hand
+    await swipe(page, cdp, { x: big.x + big.width / 2, y: big.y + big.height * 0.4 }, { x: big.x + big.width / 2 + 60, y: big.y + big.height * 0.4 - 10 }, 3);
+    await page.waitForTimeout(200);
+    const s0 = await state(page);
+    check(s0.energy === afterSwipe.energy, 'phone: releasing an enlarged card low in the hand does not play it');
+    const big2 = await stableBox(page.locator('.card.in-hand').nth(idxE));
+    await page.touchscreen.tap(big2.x + big2.width / 2, big2.y + 20);
+    const big3 = await stableBox(page.locator('.card.in-hand.selected'));
+    await swipe(page, cdp, { x: big3.x + big3.width / 2, y: big3.y + big3.height * 0.4 }, enemy, 10);
+    await idle(page);
+    const sE = await state(page);
+    check(sE.enemyHp < hpE || sE.energy < afterSwipe.energy, 'phone: dragging an enlarged card onto the enemy plays it');
+  }
   // A short swipe that stays below the play line is cancelled.
-  const idx3 = afterSwipe.hand.findIndex((id) => id === 'deflect' || id === 'pulse_shot');
+  const beforeShort = await state(page);
+  const idx3 = beforeShort.hand.findIndex((id) => id === 'deflect' || id === 'pulse_shot');
   if (idx3 >= 0) {
     const b3 = await stableBox(page.locator('.card.in-hand').nth(idx3));
     await swipe(page, cdp, { x: b3.x + b3.width / 2, y: b3.y + 25 }, { x: b3.x + b3.width / 2, y: b3.y - 50 });
     await page.waitForTimeout(400);
     const s4 = await state(page);
-    check(s4.energy === afterSwipe.energy, 'phone: a short swipe below the play line is cancelled');
+    check(s4.energy === beforeShort.energy, 'phone: a short swipe below the play line is cancelled');
   }
   // Map: tapping a room shows info, only Enter travels.
   await page.evaluate(() => { const app = window.__riftdeck; app.endCombatView(); app.run.room = null; app.run.pos = null; app.commit(); });

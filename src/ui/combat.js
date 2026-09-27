@@ -41,10 +41,6 @@ export class CombatView {
     this.banner = h('div.banner', { hidden: true });
     this.hint = h('div.hint', { hidden: true });
     this.handEl = h('div.hand');
-    this.arrowSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    this.arrowSvg.classList.add('aim');
-    this.arrowSvg.innerHTML = '<defs><marker id="aimhead" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs><path class="aim-path" marker-end="url(#aimhead)"/>';
-    this.arrowSvg.style.display = 'none';
     this.playZone = h('div.play-zone', { hidden: true }, h('span'));
 
     this.energyEl = h('div.energy', { tip: () => `<b>Energy</b><p>Spent to play cards. You have ${this.g.energy} of ${this.g.maxEnergy()} this turn.</p>` });
@@ -55,7 +51,7 @@ export class CombatView {
     const left = h('div.bar-left', this.energyEl, this.drawBtn);
     const right = h('div.bar-right', this.fadedBtn, this.discardBtn, this.endBtn);
 
-    root.append(this.unitsLayer, this.popLayer, this.playZone, this.arrowSvg, this.handEl, left, right, this.hint, this.banner);
+    root.append(this.unitsLayer, this.popLayer, this.playZone, this.handEl, left, right, this.hint, this.banner);
     this.app.stage.appendChild(root);
 
     this.handEl.addEventListener('pointerdown', (e) => this.onPointerDown(e));
@@ -79,7 +75,7 @@ export class CombatView {
       this.display.set(u.ref, { hp: u.hp, shield: u.shield });
       this.makeUnitEl(u);
     }
-    this.scene.onFrame = () => this.positionOverlays();
+    this.scene.onFrame = () => { this.positionOverlays(); this.dragFrame(); };
     this.updateInsets();
   }
 
@@ -394,14 +390,17 @@ export class CombatView {
     const p = this.ptr;
     const dx = e.clientX - p.x;
     const dy = e.clientY - p.y;
-    const H = window.innerHeight;
-    const cw = this.cardWidth();
-    const upLine = H - safeBottom() - cw * 1.4 * 0.95;
-    if (p.mode === 'press' || p.mode === 'scrub') {
-      if (e.clientY < upLine && dy < -20) {
-        this.beginDrag(p.mode === 'scrub' ? this.inspected : p.uid);
-      } else if (Math.abs(dx) > 10 || p.mode === 'scrub') {
-        p.mode = 'scrub';
+    const dist = Math.hypot(dx, dy);
+    if (p.mode === 'press') {
+      // Mouse, or a card that is already enlarged: any real movement picks it up.
+      if ((p.type === 'mouse' || p.wasSelected) && dist > 7) this.beginDrag(p.uid);
+      // Touch on the fan: upward swipe picks the card up, sideways browses the hand.
+      else if (dy < -12 && -dy > Math.abs(dx) * 0.7) this.beginDrag(p.uid);
+      else if (Math.abs(dx) > 10) { p.mode = 'scrub'; p.scrubY = e.clientY; }
+    }
+    if (p.mode === 'scrub') {
+      if (e.clientY < Math.min(p.y, p.scrubY) - 24) this.beginDrag(this.inspected || p.uid);
+      else {
         const uid = this.cardAtX(e.clientX);
         if (uid) this.setInspected(uid);
       }
@@ -438,6 +437,9 @@ export class CombatView {
     if (!c) return;
     this.ptr.mode = 'drag';
     this.dragUid = uid;
+    this.dragTilt = 0;
+    this.dragPos = null;
+    this.dragFrameX = null;
     this.selected = null;
     this.inspected = uid;
     this.hideHint();
@@ -448,22 +450,18 @@ export class CombatView {
     this.layoutHand();
   }
 
+  /** The card itself follows the pointer; enemies light up when it hovers them. */
   updateDrag(x, y) {
     const c = this.cardByUid(this.dragUid);
     const el = this.cardEls.get(this.dragUid);
     if (!c || !el) return;
     const cw = this.cardWidth();
     const ch = cw * 1.4;
-    const W = window.innerWidth;
-    const H = window.innerHeight;
     const alive = this.g.aliveEnemies();
     const targeted = this.g.needsTarget(c) && alive.length > 0;
     const inZone = y < this.playLine();
+    let scale = 1.08;
     if (targeted) {
-      // Card parks above the hand, an arrow follows the pointer.
-      const cx = W / 2;
-      const top = H - safeBottom() - ch * 1.15 - 20;
-      el.style.transform = `translate(${cx - cw / 2}px, ${top}px) scale(1.05)`;
       // With a single enemy, anywhere in the field counts as aiming at it.
       const target = this.targetAt(x, y) || (alive.length === 1 && inZone ? alive[0].ref : null);
       if (target !== this.aimTarget) {
@@ -471,12 +469,37 @@ export class CombatView {
         this.highlightTarget(target);
         fillCard(el, c.id, c.up, { g: this.g, inst: c, target: target ? this.g.enemyByRef(target) : null, cost: this.g.costOf(c) });
       }
-      this.drawArrow(cx, top + 8, x, y, !!target);
+      if (target) scale = 0.68;
+      el.classList.toggle('will-play', !!target);
       this.showPlayZone({ armed: !!target, label: target ? 'Release to attack' : alive.length === 1 ? 'Drag into the field' : 'Drag onto an enemy' });
     } else {
-      el.style.transform = `translate(${x - cw / 2}px, ${y - ch * 0.55}px) scale(1.1)`;
       el.classList.toggle('will-play', inZone);
       this.showPlayZone({ armed: inZone, label: inZone ? 'Release to play' : 'Drag into the field' });
+    }
+    this.dragPos = { x, y, scale };
+    this.applyDragTransform();
+  }
+
+  /** Runs every frame while dragging: the card tilts with its speed and settles when the pointer rests. */
+  applyDragTransform() {
+    const el = this.dragUid && this.cardEls.get(this.dragUid);
+    const p = this.dragPos;
+    if (!el || !p) return;
+    const cw = this.cardWidth();
+    const ch = cw * 1.4;
+    // The pointer holds the card a third of the way down, so the target stays visible above it.
+    el.style.transform = `translate(${p.x - cw / 2}px, ${p.y - ch * 0.32}px) rotate(${this.dragTilt.toFixed(2)}deg) scale(${p.scale})`;
+  }
+
+  dragFrame() {
+    if (!this.dragUid || !this.dragPos) return;
+    const x = this.dragPos.x;
+    const v = this.dragFrameX === null ? 0 : x - this.dragFrameX;
+    this.dragFrameX = x;
+    const tilt = clamp(this.dragTilt * 0.75 + v * 0.35, -10, 10);
+    if (Math.abs(tilt - this.dragTilt) > 0.05) {
+      this.dragTilt = Math.abs(tilt) < 0.1 ? 0 : tilt;
+      this.applyDragTransform();
     }
   }
 
@@ -485,7 +508,6 @@ export class CombatView {
     const c = this.cardByUid(uid);
     const el = this.cardEls.get(uid);
     this.dragUid = null;
-    this.arrowSvg.style.display = 'none';
     this.showPlayZone(null);
     el?.classList.remove('dragging', 'will-play');
     const target = this.aimTarget;
@@ -493,10 +515,14 @@ export class CombatView {
     this.highlightTarget(null);
     this.inspected = null;
     if (!c || cancelled) { this.refresh(); return; }
+    const playNow = (t) => {
+      this.releasedUid = uid; // play animation starts where the card was dropped
+      this.play(uid, t);
+    };
     if (this.g.needsTarget(c) && this.g.aliveEnemies().length > 0) {
-      if (target) this.play(uid, target);
+      if (target) playNow(target);
       else this.refresh();
-    } else if (y >= 0 && y < this.playLine()) this.play(uid, null);
+    } else if (y >= 0 && y < this.playLine()) playNow(null);
     else this.refresh();
   }
 
@@ -515,14 +541,6 @@ export class CombatView {
 
   highlightTarget(ref) {
     for (const [r, parts] of this.unitEls) parts.el.classList.toggle('targeted', r === ref);
-  }
-
-  drawArrow(x0, y0, x1, y1, onTarget) {
-    this.arrowSvg.style.display = '';
-    const mx = (x0 + x1) / 2;
-    const my = Math.min(y0, y1) - 80;
-    this.arrowSvg.querySelector('.aim-path').setAttribute('d', `M${x0} ${y0} Q${mx} ${my} ${x1} ${y1}`);
-    this.arrowSvg.classList.toggle('on-target', onTarget);
   }
 
   onEnemyTap(ref) {
@@ -764,17 +782,30 @@ export class CombatView {
         sfx.play('card');
         if (el) {
           el.classList.add('leaving');
-          const cw = this.cardWidth();
           el.style.zIndex = 200;
-          el.style.transform = `translate(${window.innerWidth / 2 - cw / 2}px, ${window.innerHeight * 0.42 - cw * 0.7}px) scale(1.15)`;
-          el.style.opacity = '1';
-          setTimeout(() => {
-            el.style.transform += ' translateY(-40px) scale(.7)';
-            el.style.opacity = '0';
-            setTimeout(() => { el.remove(); }, 300);
-          }, this.d(260));
+          if (this.releasedUid === ev.uid) {
+            // Dropped by hand: the card flares and dissolves right where it was released.
+            el.classList.add('cast');
+            el.style.transform = el.style.transform.replace(/rotate\([^)]*\)/, 'rotate(0deg)').replace(/scale\([^)]*\)/, 'scale(1)');
+            setTimeout(() => {
+              el.style.transform = el.style.transform.replace(/scale\([^)]*\)/, 'scale(.55)') + ' translateY(-30px)';
+              el.style.opacity = '0';
+              setTimeout(() => { el.remove(); }, 350);
+            }, this.d(140));
+          } else {
+            // Played by keyboard or tap: the card rises to the middle of the field first.
+            const cw = this.cardWidth();
+            el.style.transform = `translate(${window.innerWidth / 2 - cw / 2}px, ${window.innerHeight * 0.42 - cw * 0.7}px) scale(1.15)`;
+            el.style.opacity = '1';
+            setTimeout(() => {
+              el.style.transform += ' translateY(-40px) scale(.7)';
+              el.style.opacity = '0';
+              setTimeout(() => { el.remove(); }, 300);
+            }, this.d(260));
+          }
           this.cardEls.delete(ev.uid);
         }
+        this.releasedUid = null;
         this.layoutHand();
         await wait(this.d(200));
         if (ev.times > 1) this.pop('P', 'Echo!', 'buff');
