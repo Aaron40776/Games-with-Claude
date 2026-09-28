@@ -312,7 +312,14 @@ export function renderEvent(app) {
       opts.appendChild(h('button.option', {
         type: 'button',
         disabled: o.disabled,
-        onclick: () => { app.sfx.play('click'); if (R.chooseEventOption(run, i)) app.commit(); },
+        onclick: () => {
+          app.sfx.play('click');
+          const seen = room.gained?.length || 0;
+          if (!R.chooseEventOption(run, i)) return;
+          app.commit();
+          // Cards the event upgraded at random get the same reveal as a chosen upgrade.
+          app.showUpgrades((room.gained || []).slice(seen).filter((g) => g.kind === 'upgrade').map((g) => g.id));
+        },
       }, h('b', o.label), h('span', o.disabled && o.reqText ? o.reqText : o.detail)));
     });
     body.appendChild(opts);

@@ -74,7 +74,7 @@ src/
   data/            all content as plain data + small hook functions
     cards.js  enemies.js  relics.js  cells.js  events.js  statuses.js
   render/          three.js diorama
-    scene.js       platform, rift shader, camera fitting, unit layout, effects API
+    scene.js       platform, rift shader, camera fitting, unit layout, effects API, enemy attack styles
     models.js      procedural low-poly models for the runner and all enemies
     fx.js          particles, projectiles, rings, beams
   ui/              DOM interface
@@ -123,7 +123,9 @@ static_lance: {
 Plating. Keywords such as *Jammed* are highlighted and explained in tooltips automatically.
 
 **An enemy** (`src/data/enemies.js`) is a set of declarative moves plus an `ai()` function that
-picks the next one. Add it to `ENCOUNTERS` and choose a `model` from `render/models.js`.
+picks the next one. Add it to `ENCOUNTERS` and choose a `model` from `render/models.js`. A new model
+gets its attack move (pounce, slam, dash, blink, bite, zap, laser, volley, hex or pulse) in `ATTACK_STYLE`
+in `render/scene.js`.
 Then run `npm test` (every AI runs 12 turns) and `npm run sim` (balance).
 
 **A relic** uses hooks like `onCombatStart`, `onTurnStart`, `onCardPlayed` or flags like `energy: 1`.
@@ -139,5 +141,4 @@ should do clearly better. Numbers per encounter (HP lost, turns, losses) help fi
 - Second character with its own card pool (e.g. a drone engineer built around Charge)
 - Ascension levels (harder modifiers after a win) and unlockable cards
 - Daily seed with a shared leaderboard (artifact database capability)
-- Card upgrade animations and attack animations tailored to each enemy model
 - More events and a fourth act behind the Heart

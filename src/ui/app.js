@@ -6,13 +6,13 @@ import { icon, CELL_COLOR } from './icons.js';
 import { cardEl } from './cardview.js';
 import { relicEl, relicRow, cellEl, shardsHtml } from './widgets.js';
 import { Tooltips } from './tooltip.js';
-import { bump, tweenNumber, flyCard, installCardTilt } from './juice.js';
+import { bump, tweenNumber, flyCard, installCardTilt, upgradeReveal } from './juice.js';
 import { Sfx } from './sfx.js';
 import { CombatView, safeBottom } from './combat.js';
 import * as S from './screens.js';
 import * as store from './storage.js';
 import * as R from '../core/run.js';
-import { CARDS, canUpgrade, cardName } from '../data/cards.js';
+import { CARDS, canUpgrade, cardName, baseCost } from '../data/cards.js';
 import { CELLS } from '../data/cells.js';
 import { RELICS } from '../data/relics.js';
 import { ACT_NAMES } from '../data/enemies.js';
@@ -303,7 +303,17 @@ export class App {
   /** A card that joined the deck flies from where it was shown into the deck button. */
   flyToDeck(card, fromRect) {
     const node = cardEl(card.id, card.up, { cls: 'static' });
-    flyCard(this.flyLayer, node, fromRect, this.deckBtn, () => this.sfx.play('draw'));
+    flyCard(this.flyLayer, node, fromRect, () => this.deckBtn, () => this.sfx.play('draw'));
+  }
+
+  /** Cards that were just upgraded get a short reveal each, one after another. */
+  async showUpgrades(ids) {
+    for (const id of ids) {
+      const before = cardEl(id, false, { cls: 'static' });
+      const after = cardEl(id, true, { cls: 'static' });
+      if (baseCost(id, true) !== baseCost(id, false)) after.querySelector('.c-cost')?.classList.add('cost-up');
+      await upgradeReveal(this.flyLayer, before, after, () => this.deckBtn, { onFlip: () => this.sfx.play('upgrade') });
+    }
   }
 
   renderCells(combatView) {
@@ -519,7 +529,14 @@ export class App {
       }
       m.setActions([
         pc.cancellable && { label: 'Cancel', onclick: () => { m.close(); cancel(); } },
-        { label: { remove: 'Remove', upgrade: 'Upgrade', duplicate: 'Duplicate' }[pc.op], primary: true, disabled: !chosen, onclick: () => { m.close(); R.resolveDeckChoice(run, [chosen]); this.sfx.play(pc.op === 'upgrade' ? 'buff' : 'fade'); this.commit(); } },
+        { label: { remove: 'Remove', upgrade: 'Upgrade', duplicate: 'Duplicate' }[pc.op], primary: true, disabled: !chosen, onclick: () => {
+          m.close();
+          const card = opts.find((c) => c.uid === chosen);
+          R.resolveDeckChoice(run, [chosen]);
+          if (pc.op !== 'upgrade') this.sfx.play('fade');
+          this.commit();
+          if (pc.op === 'upgrade') this.showUpgrades([card.id]);
+        } },
       ].filter(Boolean));
     };
     for (const c of opts) {

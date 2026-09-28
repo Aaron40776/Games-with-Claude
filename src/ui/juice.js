@@ -53,8 +53,11 @@ export function tweenNumber(el, from, to, fmt = String, ms = 520) {
  * then the target bumps. `node` is a freshly built card element.
  */
 export function flyCard(layer, node, fromRect, target, onLand) {
-  const to = target?.getBoundingClientRect();
-  if (!layer || !to || !fromRect?.width || prefersReducedMotion()) { onLand?.(); return; }
+  // A getter lets the target be looked up at take-off, after any re-render.
+  if (typeof target === 'function') target = target();
+  const to = target?.isConnected ? target.getBoundingClientRect() : null;
+  // A hidden target (e.g. the HUD on the title screen) has no size: land without flying.
+  if (!layer || !to?.width || !fromRect?.width || prefersReducedMotion()) { node.remove(); onLand?.(); return; }
   const w = fromRect.width;
   node.classList.add('flying');
   node.style.setProperty('--cw', `${w}px`);
@@ -106,4 +109,56 @@ export function installCardTilt(root) {
   }, { passive: true });
   root.addEventListener('pointerleave', reset);
   root.addEventListener('pointerdown', reset, true);
+}
+
+/**
+ * Upgrade reveal: `before` is shown big in the middle, charges up, flips over
+ * into `after` (whose improved numbers glow), then flies into `target`.
+ * Resolves once the card takes off, so several reveals can follow each other.
+ */
+export async function upgradeReveal(layer, before, after, target, { onFlip, onLand } = {}) {
+  if (!layer || prefersReducedMotion()) { onFlip?.(); onLand?.(); return; }
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  const w = Math.round(Math.min(200, W * 0.42, (H * 0.5) / 1.4));
+  const x = (W - w) / 2;
+  const y = (H - w * 1.4) / 2 - H * 0.04;
+  // The screen dims around the card while it is shown, so the eye goes to it.
+  const dim = h('div.upgrade-dim');
+  const wrap = h('div.upgrade-show');
+  wrap.style.cssText = `width:${w}px;height:${w * 1.4}px;transform:translate(${x}px, ${y}px)`;
+  for (const c of [before, after]) c.style.setProperty('--cw', `${w}px`);
+  after.hidden = true;
+  wrap.append(before, after);
+  layer.append(dim, wrap);
+  const run = (el, frames, opts) => el.animate(frames, opts).finished.catch(() => {});
+
+  await run(wrap, [
+    { opacity: 0, transform: `translate(${x}px, ${y + 40}px) scale(0.8)` },
+    { opacity: 1, transform: `translate(${x}px, ${y}px)` },
+  ], { duration: 320, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.1)' });
+  // Charge: it brightens and trembles.
+  await run(before, [
+    { filter: 'brightness(1)', translate: '0 0' },
+    { filter: 'brightness(1.3)', translate: '-2px 0', offset: 0.3 },
+    { filter: 'brightness(1.6)', translate: '2px -1px', offset: 0.55 },
+    { filter: 'brightness(1.9)', translate: '-2px 1px', offset: 0.8 },
+    { filter: 'brightness(2.4)', translate: '0 0' },
+  ], { duration: 460, easing: 'ease-in' });
+  // Flip: the old face turns away, the upgraded one turns in.
+  await run(before, [{ transform: 'scaleX(1)', filter: 'brightness(2.4)' }, { transform: 'scaleX(0)', filter: 'brightness(3)' }], { duration: 150, easing: 'ease-in' });
+  before.hidden = true;
+  after.hidden = false;
+  after.classList.add('reveal');
+  onFlip?.();
+  burst(layer, W / 2, y + w * 0.7, '#5be39b', { size: w * 1.9, sparks: 20 });
+  await run(after, [{ transform: 'scaleX(0)', filter: 'brightness(3)' }, { transform: 'scaleX(1.06)', filter: 'brightness(1.5)', offset: 0.7 }, { transform: 'scaleX(1)', filter: 'brightness(1)' }], { duration: 260, easing: 'ease-out' });
+  // Let the green numbers be read, then send the card to the deck.
+  await new Promise((r) => setTimeout(r, 950));
+  const rect = after.getBoundingClientRect();
+  wrap.remove();
+  dim.classList.add('out');
+  setTimeout(() => dim.remove(), 400);
+  after.classList.remove('reveal');
+  flyCard(layer, after, rect, target, onLand);
 }
