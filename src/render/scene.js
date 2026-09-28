@@ -17,6 +17,57 @@ const PALETTES = {
 
 const RANGED = new Set(['drone', 'wisp', 'sentry', 'cultist', 'seraph', 'sentinel', 'weaver', 'shade', 'gatekeeper', 'heart', 'sovereign', 'archon']);
 
+/** How each enemy model attacks. Models not listed fall back to a plain lunge or orb shot. */
+const ATTACK_STYLE = {
+  hound: 'pounce', brood: 'pounce', mother: 'pounce', crawler: 'pounce', mite: 'pounce',
+  warden: 'slam', hulk: 'slam', colossus: 'slam', gatekeeper: 'slam',
+  knight: 'dash', archon: 'dash', shade: 'blink',
+  leech: 'bite', eel: 'bite',
+  wisp: 'zap', weaver: 'zap',
+  sentry: 'laser', sentinel: 'laser', seraph: 'laser',
+  drone: 'volley', shardling: 'volley',
+  cultist: 'hex', sovereign: 'hex',
+  heart: 'pulse', leviathan: 'pulse',
+};
+
+const easeOut = (x) => 1 - (1 - x) ** 2;
+
+/**
+ * Body motion of an attack at progress k (0..1): s = share of the way to the
+ * target, lift = 0..1 of the move's hop height, squash > 0 flattens and < 0
+ * stretches the model, hidden = the unit has blinked out.
+ */
+function moveShape(profile, k) {
+  switch (profile) {
+    case 'arc': // crouch, leap in an arc onto the target, land, slide back
+      if (k < 0.15) return { s: 0, lift: 0, squash: 0.22 * Math.sin((k / 0.15) * Math.PI) };
+      if (k < 0.5) { const p = (k - 0.15) / 0.35; return { s: easeOut(p), lift: Math.sin(p * Math.PI), squash: -0.1 }; }
+      if (k < 0.62) return { s: 1, lift: 0, squash: 0.2 * Math.sin(((k - 0.5) / 0.12) * Math.PI) };
+      return { s: 1 - easeOut((k - 0.62) / 0.38), lift: 0, squash: 0 };
+    case 'slam': // rise up, crash down a step forward, recover
+      if (k < 0.55) { const p = k / 0.55; return { s: 0, lift: easeOut(p), squash: -0.12 * p }; }
+      if (k < 0.68) { const p = (k - 0.55) / 0.13; return { s: p * 0.5, lift: 1 - p * p, squash: -0.12 }; }
+      if (k < 0.8) return { s: 0.5, lift: 0, squash: 0.28 * Math.sin(((k - 0.68) / 0.12) * Math.PI) };
+      return { s: 0.5 * (1 - easeOut((k - 0.8) / 0.2)), lift: 0, squash: 0 };
+    case 'dash': // burst forward, hold through the cut, walk back
+      if (k < 0.22) return { s: easeOut(k / 0.22), lift: 0, squash: -0.14 };
+      if (k < 0.55) return { s: 1, lift: 0, squash: 0 };
+      return { s: 1 - easeOut((k - 0.55) / 0.45), lift: 0, squash: 0 };
+    case 'blink': // vanish, appear at the target, strike, vanish, return
+      return { s: k < 0.16 || k >= 0.76 ? 0 : 1, lift: 0, squash: 0, hidden: (k > 0.06 && k < 0.16) || (k > 0.76 && k < 0.86) };
+    case 'stretch': { // lunge that reaches out
+      const s = k < 0.35 ? k / 0.35 : 1 - (k - 0.35) / 0.65;
+      return { s, lift: 0, squash: -0.2 * s };
+    }
+    case 'pump': // draw in, then swell out once
+      if (k < 0.35) return { s: 0, lift: 0, squash: -0.12 * (k / 0.35) };
+      if (k < 0.6) return { s: 0, lift: 0, squash: 0.24 * Math.sin(((k - 0.35) / 0.25) * Math.PI) };
+      return { s: 0, lift: 0, squash: 0 };
+    default: // quick jab towards the target and back
+      return { s: k < 0.35 ? k / 0.35 : 1 - (k - 0.35) / 0.65, lift: 0, squash: 0 };
+  }
+}
+
 const NOISE_GLSL = `
   float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
   float noise(vec3 x) {
@@ -470,11 +521,15 @@ export class Diorama {
   dur(ms) { return ms / this.speed; }
 
   /** Attack animation; resolves at the moment of impact. */
-  attack(srcRef, tgtRef, { color = '#36c9f0', kind = 'shot' } = {}) {
+  attack(srcRef, tgtRef, { color = '#36c9f0', kind = 'shot', cue = () => {} } = {}) {
     return new Promise((resolve) => {
       const src = this.units.get(srcRef);
       const tgt = this.units.get(tgtRef);
       if (!src || !tgt) { resolve(); return; }
+      if (!src.isPlayer && ATTACK_STYLE[src.model] && !this.reduced) {
+        this.enemyAttack(ATTACK_STYLE[src.model], src, tgt, color, cue, resolve);
+        return;
+      }
       const ranged = src.isPlayer || RANGED.has(src.model);
       const dir = tgt.base.clone().sub(src.base).setY(0).normalize();
       if (kind === 'beam') {
@@ -506,6 +561,221 @@ export class Diorama {
         setTimeout(resolve, dur * 450);
       }
     });
+  }
+
+  /**
+   * Signature enemy attacks. Each resolves at the moment of impact, like the
+   * plain ones, so the damage numbers land with the blow. cue(name) asks the UI
+   * for a sound at the right moment.
+   */
+  enemyAttack(style, src, tgt, color, cue, resolve) {
+    const dir = tgt.base.clone().sub(src.base).setY(0).normalize();
+    // How far the body travels to reach the target's edge.
+    const reach = Math.max(0.3, src.base.distanceTo(tgt.base) - (src.width + tgt.width) * 0.4);
+    const move = (profile, ms, dist, hop = 0) => {
+      // A follow-up hit starts where the last move still is, instead of snapping home.
+      const last = src.lunge;
+      const carry = last ? last.dist * Math.max(0, moveShape(last.profile, Math.min(1, last.t / last.dur)).s) : 0;
+      src.lunge = { t: 0, dur: this.dur(ms) / 1000, dir, dist, hop, profile, carry };
+    };
+    const at = (ms, fn) => setTimeout(fn, this.dur(ms));
+    const tgtAt = () => this.pointOf(tgt.ref, 'center');
+    switch (style) {
+      case 'pounce': {
+        move('arc', 520, Math.min(reach, 3), 0.55 + src.height * 0.25);
+        cue('whoosh');
+        at(260, () => {
+          this.particles.emit(tgt.base.clone().setY(0.1), { n: 16, color: '#8a93b8', speed: 1.6, life: 0.5, size: 0.1, up: 0.6, gravity: 3 });
+          resolve();
+        });
+        return;
+      }
+      case 'slam': {
+        const heavy = src.width > 1.6;
+        move('slam', heavy ? 760 : 620, 0.5, 0.5 + src.height * 0.15);
+        const impact = (heavy ? 760 : 620) * 0.68;
+        at(impact, () => {
+          cue('thud');
+          const foot = src.base.clone().add(dir.clone().multiplyScalar(0.5)).setY(0.06);
+          this.particles.emit(foot, { n: 30, color: '#8a93b8', speed: 3, life: 0.6, size: 0.12, up: 0.4, gravity: 4 });
+          this.flash(foot.clone().setY(0.3), color, src.width * 1.6, 220);
+          this.shake(heavy ? 0.4 : 0.25);
+          this.shockwave(foot, tgt.base, color, this.dur(heavy ? 300 : 240), resolve);
+        });
+        return;
+      }
+      case 'dash': {
+        move('dash', 420, reach);
+        cue('whoosh');
+        at(110, () => {
+          this.slash(tgtAt(), color, tgt.width * 1.1);
+          this.particles.emit(tgtAt(), { n: 14, color, speed: 3, life: 0.35, size: 0.1 });
+          resolve();
+        });
+        return;
+      }
+      case 'blink': {
+        move('blink', 620, reach);
+        const puff = (p) => this.particles.emit(p, { n: 22, color, speed: 1.8, life: 0.45, size: 0.12, up: 0.4 });
+        puff(this.pointOf(src.ref, 'center'));
+        cue('whoosh');
+        at(100, () => puff(tgtAt()));
+        at(190, () => { this.slash(tgtAt(), color, tgt.width * 1.2); resolve(); });
+        at(480, () => puff(this.pointOf(src.ref, 'center')));
+        return;
+      }
+      case 'bite': {
+        move('stretch', 380, reach);
+        cue('whoosh');
+        at(135, () => {
+          const a = this.pointOf(src.ref, 'center');
+          const b = tgtAt();
+          const tether = makeBeam(a, b, color, 0.03);
+          this.transients.add(tether, this.dur(260) / 1000, (k, dt, o) => { o.material.opacity = (1 - k) * 0.8; });
+          this.particles.emit(b, { n: 18, color, speed: 2.4, life: 0.5, size: 0.1, gravity: 3 });
+          resolve();
+        });
+        return;
+      }
+      case 'zap': {
+        move('stretch', 300, 0.15);
+        cue('zap');
+        const a = this.pointOf(src.ref, 'muzzle');
+        const b = tgtAt();
+        this.lightning(a, b, color, this.dur(260));
+        this.flash(a, color, 0.8, 160);
+        at(40, resolve);
+        return;
+      }
+      case 'laser': {
+        const a = this.pointOf(src.ref, 'muzzle');
+        const orb = makeOrb(color, 0.1);
+        orb.position.copy(a);
+        cue('charge');
+        this.transients.add(orb, this.dur(260) / 1000, (k, dt, o) => { o.scale.setScalar(0.3 + k * 1.6); }, () => {
+          const b = tgtAt();
+          const beam = makeBeam(a, b, color, 0.05);
+          this.transients.add(beam, this.dur(300) / 1000, (k, dt, o) => { o.material.opacity = 1 - k; o.scale.x = o.scale.z = 1 + k * 2.5; });
+          this.flash(b, color, tgt.width, 200);
+          src.lunge = { t: 0, dur: this.dur(240) / 1000, dir: dir.clone().multiplyScalar(-1), dist: 0.22 };
+          resolve();
+        });
+        return;
+      }
+      case 'volley': {
+        move(null, 260, 0.15);
+        cue('shoot');
+        const side = new THREE.Vector3(-dir.z, 0, dir.x);
+        const n = 3;
+        for (let i = 0; i < n; i++) {
+          at(i * 70, () => {
+            const a = this.pointOf(src.ref, 'muzzle');
+            const b = tgtAt();
+            const orb = makeOrb(color, 0.07);
+            const bend = (i - 1) * 0.5;
+            this.transients.add(orb, this.dur(220) / 1000, (k, dt, o) => {
+              o.position.lerpVectors(a, b, k).addScaledVector(side, Math.sin(k * Math.PI) * bend);
+              o.position.y += Math.sin(k * Math.PI) * 0.25;
+              if (Math.random() < 0.6) this.particles.emit(o.position, { n: 1, color, speed: 0.2, life: 0.25, size: 0.07 });
+            }, i === n - 1 ? resolve : null);
+          });
+        }
+        return;
+      }
+      case 'hex': {
+        move('arc', 520, 0, 0.25);
+        cue('charge');
+        const top = tgt.base.clone().setY(tgt.height + 1.3);
+        const rune = makeRing(color, 0.9, 0.8);
+        rune.position.copy(top);
+        this.transients.add(rune, this.dur(300) / 1000, (k, dt, o) => {
+          o.scale.setScalar(tgt.width * (0.2 + easeOut(k) * 0.55));
+          o.rotation.z = k * 4;
+        }, () => {
+          const bolt = makeBeam(top, tgtAt(), color, 0.08);
+          this.transients.add(bolt, this.dur(260) / 1000, (k, dt, o) => { o.material.opacity = 1 - k; o.scale.x = o.scale.z = 1 + k * 2; });
+          this.flash(top, color, tgt.width, 220);
+          resolve();
+        });
+        return;
+      }
+      case 'pulse': {
+        move('pump', 700, 0);
+        cue('charge');
+        at(300, () => {
+          cue('thud');
+          const foot = src.base.clone().setY(0.06);
+          this.flash(this.pointOf(src.ref, 'center'), color, src.width * 1.8, 300);
+          this.shake(0.3);
+          this.shockwave(foot, tgt.base, color, this.dur(320), resolve);
+        });
+        return;
+      }
+      default:
+        move(null, 320, Math.min(1.4, reach));
+        at(145, resolve);
+    }
+  }
+
+  /** A ring racing along the floor from `from` until it reaches `to`, then done(). */
+  shockwave(from, to, color, ms, done) {
+    const r = makeRing(color, 0.9, 0.9);
+    r.position.copy(from);
+    const far = from.distanceTo(to.clone().setY(from.y)) + 0.3;
+    this.transients.add(r, ms / 1000, (k, dt, o) => {
+      o.scale.setScalar(0.3 + far * easeOut(k));
+      o.material.opacity = 0.95 * (1 - k * 0.6);
+      if (Math.random() < 0.5) {
+        const a = Math.random() * Math.PI * 2;
+        const p = o.position.clone().add(new THREE.Vector3(Math.cos(a), 0, Math.sin(a)).multiplyScalar(o.scale.x));
+        this.particles.emit(p, { n: 1, color, speed: 0.5, life: 0.35, size: 0.08, up: 1 });
+      }
+    }, () => {
+      this.particles.emit(to.clone().setY(0.15), { n: 16, color, speed: 2.2, life: 0.45, size: 0.1, up: 0.8, gravity: 3 });
+      done();
+    });
+  }
+
+  /** A curved cut across a point, turned to the camera. */
+  slash(at, color, size = 1) {
+    const arc = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.58, 20, 1, 0, Math.PI * 0.9), new THREE.MeshBasicMaterial({
+      color: new THREE.Color(color).multiplyScalar(2.5), transparent: true, side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, toneMapped: false,
+    }));
+    arc.position.copy(at);
+    const tilt = (Math.random() - 0.5) * 1.2 - 0.8;
+    this.transients.add(arc, this.dur(240) / 1000, (k, dt, o) => {
+      o.quaternion.copy(this.camera.quaternion);
+      o.rotateZ(tilt + k * 1.2);
+      o.scale.setScalar(size * (0.7 + k * 0.6));
+      o.material.opacity = 1 - k * k;
+    });
+    this.flash(at, color, size, 160);
+  }
+
+  /** A jagged bolt that re-forks every frame while it fades. */
+  lightning(a, b, color, ms) {
+    const N = 12;
+    const pos = new Float32Array(N * 3);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const bolt = new THREE.Line(geo, new THREE.LineBasicMaterial({
+      color: new THREE.Color(color).multiplyScalar(3), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+    }));
+    const p = new THREE.Vector3();
+    const jag = a.distanceTo(b) * 0.06;
+    this.transients.add(bolt, ms / 1000, (k, dt, o) => {
+      for (let i = 0; i < N; i++) {
+        p.lerpVectors(a, b, i / (N - 1));
+        if (i > 0 && i < N - 1) p.add(new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(jag * 2));
+        pos.set([p.x, p.y, p.z], i * 3);
+      }
+      geo.attributes.position.needsUpdate = true;
+      o.material.opacity = 1 - k;
+    });
+    const glowBeam = makeBeam(a, b, color, 0.025);
+    this.transients.add(glowBeam, ms / 1000, (k, dt, o) => { o.material.opacity = 0.6 * (1 - k); });
+    this.particles.emit(b, { n: 16, color, speed: 3, life: 0.35, size: 0.1 });
   }
 
   hit(ref, { amount = 0, blocked = 0, color = '#ffffff' } = {}) {
@@ -765,15 +1035,19 @@ export class Diorama {
       if (!u.dying) u.inner.scale.setScalar(1);
     }
 
-    // Lunge
+    // Attack move (lunge, pounce, slam, ...): travel, hop and squash.
     const off = new THREE.Vector3();
+    let move = null;
     if (u.lunge) {
       u.lunge.t += dt;
       const k = Math.min(1, u.lunge.t / u.lunge.dur);
-      const s = k < 0.35 ? k / 0.35 : 1 - (k - 0.35) / 0.65;
-      off.copy(u.lunge.dir).multiplyScalar(u.lunge.dist * Math.max(0, s));
+      move = moveShape(u.lunge.profile, k);
+      const carried = (u.lunge.carry || 0) * (1 - easeOut(Math.min(1, k * 1.6)));
+      off.copy(u.lunge.dir).multiplyScalar(Math.max(u.lunge.dist * Math.max(0, move.s), carried));
+      off.y = (u.lunge.hop || 0) * move.lift;
       if (k >= 1) u.lunge = null;
     }
+    if (move?.squash && !u.dying) u.inner.scale.set(1 + move.squash * 0.6, 1 - move.squash, 1 + move.squash * 0.6);
     if (u.shakeT > 0) {
       u.shakeT -= dt;
       off.x += (Math.random() - 0.5) * 0.12;
@@ -783,7 +1057,7 @@ export class Diorama {
     off.applyAxisAngle(new THREE.Vector3(0, 1, 0), -g.rotation.y);
     u.inner.position.x = off.x;
     u.inner.position.z = off.z;
-    u.inner.position.y += Math.sin(t * 1.6 + u.phase) * 0.03;
+    u.inner.position.y += off.y + Math.sin(t * 1.6 + u.phase) * 0.03;
 
     // Hit flash
     if (u.flash > 0) {
@@ -795,7 +1069,7 @@ export class Diorama {
 
     // Phased: flicker
     const phased = (u.state.phased || 0) > 0;
-    u.inner.visible = !phased || Math.sin(t * 22) > -0.6;
+    u.inner.visible = !move?.hidden && (!phased || Math.sin(t * 22) > -0.6);
 
     // Shield ring pulse
     if (u.shieldRing.visible) {

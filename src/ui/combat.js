@@ -926,7 +926,7 @@ export class CombatView {
         const color = this.unitColor(ev.src);
         const kind = ev.src === 'P' && this.currentPlay && BEAM_CARDS.has(this.currentPlay.id) ? 'beam' : 'shot';
         if (ev.src === 'P' && kind === 'shot') sfx.play('shoot');
-        await this.scene.attack(ev.src, ev.tgt, { color, kind });
+        await this.scene.attack(ev.src, ev.tgt, { color, kind, cue: (name) => sfx.play(name) });
         if (ev.blocked > 0) {
           const d = this.disp(ev.tgt);
           d.shield = Math.max(0, d.shield - ev.blocked);

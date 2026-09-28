@@ -147,6 +147,21 @@ export class Sfx {
       case 'cell': this.tone({ f: 300, to: 900, dur: 0.18, vol: 0.08 }); break;
       case 'map': this.tone({ f: 660, dur: 0.12, vol: 0.05 }); break;
       case 'fade': this.noise({ dur: 0.3, vol: 0.07, freq: 3000, to: 8000, type: 'bandpass', q: 2 }); break;
+      // Enemy attack cues (scene.enemyAttack asks for them at the right moment).
+      case 'whoosh': this.noise({ dur: 0.18, vol: 0.1, freq: 500, to: 2400, type: 'bandpass', q: 1.4 }); break;
+      case 'thud':
+        this.tone({ f: 90, to: 32, dur: 0.3, vol: 0.3 });
+        this.noise({ dur: 0.25, vol: 0.18, freq: 500, to: 90 });
+        break;
+      case 'zap':
+        this.tone({ f: 1800, to: 300, type: 'sawtooth', dur: 0.14, vol: 0.05 });
+        this.noise({ dur: 0.12, vol: 0.08, freq: 6000, type: 'highpass' });
+        break;
+      case 'charge': this.tone({ f: 240, to: 960, type: 'triangle', dur: 0.26, vol: 0.05 }); break;
+      case 'upgrade':
+        [523, 659, 784, 1046, 1318].forEach((f, i) => this.tone({ f, type: 'triangle', dur: 0.16, vol: 0.06, delay: i * 0.05 }));
+        this.noise({ dur: 0.4, vol: 0.05, freq: 5000, to: 9000, type: 'bandpass', q: 2, delay: 0.2 });
+        break;
       default: break;
     }
   }

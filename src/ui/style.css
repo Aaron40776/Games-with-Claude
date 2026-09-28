@@ -702,6 +702,26 @@ p { margin: 0; }
 }
 .btn.primary:hover:not(:disabled)::after { transform: translateX(120%); transition: transform 0.55s ease; }
 
+/* Upgrade reveal (juice.js upgradeReveal): the card glows green and its better numbers pulse. */
+.upgrade-dim { position: absolute; inset: 0; background: rgba(3, 4, 9, 0.6); animation: fadein 0.3s ease-out; transition: opacity 0.35s; }
+.upgrade-dim.out { opacity: 0; }
+.upgrade-show { position: absolute; left: 0; top: 0; }
+.upgrade-show::before {
+  content: ""; position: absolute; inset: -45%; pointer-events: none;
+  background: radial-gradient(circle, rgba(91, 227, 155, 0.32), rgba(91, 227, 155, 0.08) 40%, transparent 65%);
+  animation: fadein 0.4s ease-out backwards;
+}
+.upgrade-show .card { position: absolute; left: 0; top: 0; will-change: transform, filter; }
+.card.reveal { filter: drop-shadow(0 0 1.2em rgba(91, 227, 155, 0.7)); }
+.card.reveal .num.upg, .card.reveal .c-cost.cost-up span { display: inline-block; animation: numglow 1.3s ease-out 0.15s both; }
+.card.reveal .c-name { animation: nameglow 1.3s ease-out both; }
+@keyframes numglow {
+  0% { scale: 1; text-shadow: none; }
+  25% { scale: 1.45; text-shadow: 0 0 0.5em var(--good), 0 0 1.2em var(--good); }
+  100% { scale: 1; text-shadow: 0 0 0.35em rgba(91, 227, 155, 0.6); }
+}
+@keyframes nameglow { 30% { text-shadow: 0 0 0.6em var(--good), 0 0 1.4em var(--good); } }
+
 @media (prefers-reduced-motion: reduce) {
   .it, .node.reach, .chest .ico, .end-turn.glow, .edge.open { animation: none; }
   .panel, .modal, .reward, .modal-backdrop, .card-pick-row .card, .card-grid .card, .shop-card, .map-nodes .node, .map-lines { animation: none; }
