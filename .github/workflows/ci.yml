@@ -1,0 +1,45 @@
+# Checks every pull request before it can reach main: lint, engine tests,
+# real-browser input and scenario tests, the offline/PWA checks and a smoke
+# playthrough. Deploying stays in pages.yml.
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Install Chromium for the browser tests
+        run: npx playwright install --with-deps chromium
+      - name: Lint
+        run: npm run lint
+      - name: Engine tests
+        run: npm test
+      - name: Browser tests (input, scenarios, PWA)
+        run: npm run e2e
+      - name: Smoke playthrough
+        run: npm run smoke
+      - name: Keep screenshots when something fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shots
+          path: shots/
+          if-no-files-found: ignore

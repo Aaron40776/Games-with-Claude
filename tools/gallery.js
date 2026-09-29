@@ -31,7 +31,6 @@ async function setRoom(room, extra = '') {
     app.endCombatView();
     const run = app.run;
     run.room = room;
-    // eslint-disable-next-line no-new-func
     if (extra) new Function('run', 'app', extra)(run, app);
     app.commit();
   }, [room, extra]);
