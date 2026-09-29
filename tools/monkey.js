@@ -2,7 +2,7 @@
 // choices, and fails on any page error or on a stall (the same state for too
 // long). Catches lifecycle bugs the scripted tests don't reach: screens that
 // change mid-animation, modals over combat, rewards claimed in odd orders.
-//   node tools/monkey.js [seed] [runs] [--phone]
+//   node tools/monkey.js [seed] [runs] [maxSteps] [--phone]
 
 import { chromium } from 'playwright';
 import fs from 'node:fs';
@@ -15,7 +15,7 @@ const args = process.argv.slice(2).filter((a) => !a.startsWith('--'));
 const seed = args[0] || 'MONKEY';
 const runs = Number(args[1] || 2);
 const phone = process.argv.includes('--phone');
-const MAX_STEPS = 4000;
+const MAX_STEPS = Number(args[2] || 4000);
 
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 const ctx = await browser.newContext(phone
@@ -124,7 +124,7 @@ for (let r = 0; r < runs && !failed; r++) {
       break;
     }
   }
-  if (steps >= MAX_STEPS) results.push(`${runSeed}: still going after ${MAX_STEPS} steps`);
+  if (steps >= MAX_STEPS) results.push(`${runSeed}: no errors in ${MAX_STEPS} steps (floor ${await page.evaluate(() => window.__riftdeck.run?.floor)})`);
 }
 await browser.close();
 console.log(results.join('\n'));

@@ -24,8 +24,9 @@ Check the code's state on every change, not only when asked:
 2. `npm test`: engine unit tests and 40 full bot runs.
 3. `npm run e2e`: real pointer input, rare scenarios and the PWA/offline checks in Chromium.
 4. `npm run smoke`: headless playthrough; look at the screenshots in `shots/` for layout breakage.
-5. For UI flow changes (screens, modals, combat lifecycle), also run `npm run monkey`: random
-   full runs through the real UI that fail on any page error or stall.
+5. For UI flow changes (screens, modals, combat lifecycle), also run the monkey: random runs
+   through the real UI that fail on any page error or stall. `npm run monkey -- SEED 1 300` is a
+   quick pass (a few minutes); plain `npm run monkey` plays two long runs; add `--phone` for touch.
 6. For motion, check it visually. Headless screenshots can show the end state of a running
    animation, so record a video with Playwright (`recordVideo`) and look at extracted frames.
 7. Re-read the diff for bugs: async work that outlives its screen (`this.destroyed`, closed
