@@ -12,7 +12,9 @@
     "smoke": "node build.js && node tools/smoke.js",
     "e2e": "node build.js && node tools/interact.js && node tools/scenarios.js && node tools/pwa.js",
     "icons": "node tools/icons.js",
-    "gallery": "node build.js && node tools/gallery.js"
+    "gallery": "node build.js && node tools/gallery.js",
+    "lint": "eslint .",
+    "monkey": "node build.js && node tools/monkey.js"
   },
   "dependencies": {
     "@fontsource/barlow-semi-condensed": "^5.2.0",
@@ -21,6 +23,8 @@
     "three": "^0.186.1"
   },
   "devDependencies": {
+    "eslint": "^9.39.5",
+    "globals": "^16.5.0",
     "playwright": "^1.56.1"
   }
 }

@@ -29,6 +29,8 @@ jobs:
         run: npm ci
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      - name: Lint
+        run: npm run lint
       - name: Test
         run: npm test
       - name: Build
